@@ -16,14 +16,14 @@ public sealed class ConsoleFunctionInvocationFilter : IFunctionInvocationFilter
     {
         var functionName = context.Function.Name;
         var pluginName = context.Function.PluginName;
-        _logger.LogInformation("[Invoke] {Plugin}.{Function}", pluginName, functionName);
+        _logger.LogWarning("[Invoke] {Plugin}.{Function}", pluginName, functionName);
 
         await next(context);
 
         var text = context.Result?.GetValue<string>();
         if (!string.IsNullOrWhiteSpace(text))
         {
-            _logger.LogInformation("[Result] {Plugin}.{Function}: {Text}", pluginName, functionName, text);
+            _logger.LogWarning("[Result] {Plugin}.{Function}: {Text}", pluginName, functionName, text);
         }
     }
 }

@@ -14,8 +14,8 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
             prompt = "Say hello from Sequential mode.";
         }
 
-        var function = kernel.CreateFunctionFromPrompt(prompt);
-        var result = await kernel.InvokeAsync(function);
+        // var function = kernel.CreateFunctionFromPrompt(prompt);
+        var result = await kernel.InvokePromptAsync("Please respond to the following prompt: " + prompt);
         logger.LogInformation("[Sequential] Completed: {Result}", result.GetValue<string>());
     }
 }
