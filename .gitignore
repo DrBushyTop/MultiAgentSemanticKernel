@@ -1,0 +1,73 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+[Bb]in/
+[Oo]bj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+[Tt]est[Rr]esults/
+[Aa]rtifacts/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+*.rsuser
+*.sln.docstates
+
+# NuGet
+*.nupkg
+*.snupkg
+*.nuspec
+packages/
+
+# Publish / Packaging
+[Pp]ublish/
+app.publish/
+
+# Logs / Temp
+*.log
+*.tmp
+Logs/
+[Ll]og/
+[Ll]ogs/
+
+# Coverage / Test outputs
+*.coverage
+*.coveragexml
+coverage/
+CoverageResults/
+TestResult.xml
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# Azure publish
+*.azurePubxml
+*.pubxml
+*.pubxml.user
+
+# Rider / JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+_ReSharper.Caches/
+*.DotSettings.user
+*.sln.iml
+
+# Generated files
+Generated Files/
+
+
