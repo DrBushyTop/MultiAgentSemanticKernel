@@ -2,6 +2,8 @@ using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Linq;
+using System.Collections.Generic;
+using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Plugins;
 
@@ -27,6 +29,10 @@ public sealed class OpsPlugin
                 Owners = owners?.ToArray() ?? new[] { "@team-catalog" },
                 Rollbacks = 0,
                 LastAction = "deploy",
+                AvailableVersions = new List<VersionInfo>
+                {
+                    new VersionInfo { Version = "1.31", Notes = "previous stable" }
+                }
             };
             _defaultService ??= service;
         }
@@ -67,25 +73,55 @@ public sealed class OpsPlugin
         return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    [KernelFunction, Description("Rollback a deploy")]
-    public string Deploy_Rollback([Description("service")] string service, [Description("toVersion")] string? toVersion = null)
+    [KernelFunction, Description("Deploy a specific version (use for rollback or upgrade)")]
+    public string Deploy_Version([Description("service")] string service, [Description("version")] string version)
     {
+        Console.WriteLine($"Deploying version {version} for service {service}");
         var s = GetServiceOrDefault(service);
         lock (_lock)
         {
-            s.Rollbacks += 1;
-            s.LastAction = "rollback";
-            s.Version = toVersion ?? "previous-stable";
+            var isRollback = string.Compare(version, s.Version, StringComparison.Ordinal) < 0 || version == "1.31";
+            if (isRollback)
+            {
+                s.Rollbacks += 1;
+                s.LastAction = "rollback";
+            }
+            else
+            {
+                s.LastAction = "deploy";
+            }
+
+            s.Version = version;
             s.StartedAt = DateTime.UtcNow.ToString("o");
-            // simple improvement model
-            s.P95Ms = Math.Max(200, s.P95Ms * 0.6);
-            s.ErrorRate = Math.Max(0.005, s.ErrorRate * 0.3);
+            // simple model for health change by version
+            if (version == "1.31")
+            {
+                s.P95Ms = Math.Max(220, s.P95Ms * 0.6);
+                s.ErrorRate = Math.Max(0.010, s.ErrorRate * 0.35);
+                // after rollback, hotfix 1.33 becomes available
+                if (!s.AvailableVersions.Any(v => v.Version == "1.33"))
+                {
+                    s.AvailableVersions.Add(new VersionInfo { Version = "1.33", Notes = "hotfix: improves error rate" });
+                }
+            }
+            else if (version == "1.33")
+            {
+                // hotfix installed, improve further
+                s.P95Ms = Math.Max(200, s.P95Ms * 0.85);
+                s.ErrorRate = Math.Max(0.006, s.ErrorRate * 0.2);
+            }
+            else
+            {
+                // generic small change
+                s.P95Ms = Math.Max(200, s.P95Ms * 0.95);
+                s.ErrorRate = Math.Max(0.010, s.ErrorRate * 0.95);
+            }
         }
 
         var payload = new
         {
             service = s.Service,
-            toVersion = s.Version,
+            version = s.Version,
             ok = true,
             newHealth = new { p95_ms = (int)Math.Round(s.P95Ms), errorRate = Math.Round(s.ErrorRate, 3) },
             rollbacks = s.Rollbacks,
@@ -100,6 +136,18 @@ public sealed class OpsPlugin
            "  \"message\": \"" + message.Replace("\"", "\\\"") + "\",\n" +
            "  \"link\": \"https://chat.example/msg/1\"\n" +
            "}";
+
+    [KernelFunction, Description("List available versions with notes")]
+    public string Versions_Available([Description("service")] string service)
+    {
+        var s = GetServiceOrDefault(service);
+        var payload = new
+        {
+            service = s.Service,
+            versions = s.AvailableVersions.Select(v => new { version = v.Version, notes = v.Notes }).ToArray()
+        };
+        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+    }
 
     private ServiceState GetServiceOrDefault(string service)
     {
@@ -132,6 +180,13 @@ public sealed class OpsPlugin
         public string[] Owners { get; set; } = Array.Empty<string>();
         public int Rollbacks { get; set; } = 0;
         public string LastAction { get; set; } = "deploy";
+        public List<VersionInfo> AvailableVersions { get; set; } = new();
+    }
+
+    private sealed class VersionInfo
+    {
+        public string Version { get; set; } = string.Empty;
+        public string Notes { get; set; } = string.Empty;
     }
 }
 

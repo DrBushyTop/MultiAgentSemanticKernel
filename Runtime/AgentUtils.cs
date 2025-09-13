@@ -9,12 +9,12 @@ namespace MultiAgentSemanticKernel.Runtime;
 
 public class AgentUtils
 {
-    public static ChatCompletionAgent Create(string name, string description, string instructions, Kernel kernel, object? responseFormat = null)
+    public static ChatCompletionAgent Create(string name, string description, string instructions, Kernel kernel, object? responseFormat = null, Action<Kernel>? configureKernel = null)
     {
-        return CreateAgent(name, description, instructions, kernel, responseFormat);
+        return CreateAgent(name, description, instructions, kernel, responseFormat, configureKernel);
     }
 
-    public static ChatCompletionAgent CreateAgent(string name, string description, string instructions, Kernel kernel, object? responseFormat = null)
+    public static ChatCompletionAgent CreateAgent(string name, string description, string instructions, Kernel kernel, object? responseFormat = null, Action<Kernel>? configureKernel = null)
     {
         // Create a per-agent kernel with identity + filter for clean logging
         var agentId = Guid.NewGuid().ToString("N");
@@ -34,10 +34,17 @@ public class AgentUtils
         builder.Services.AddSingleton<IFunctionInvocationFilter, ConsoleFunctionInvocationFilter>();
 
         var agentKernel = builder.Build();
-        // Mirror plugins from the shared kernel (e.g., Ops/PR/Workflow and any runtime plugins)
-        foreach (var plugin in kernel.Plugins)
+        if (configureKernel is not null)
         {
-            agentKernel.Plugins.Add(plugin);
+            configureKernel(agentKernel);
+        }
+        else
+        {
+            // Mirror plugins from the shared kernel (e.g., Ops/PR/Workflow and any runtime plugins)
+            foreach (var plugin in kernel.Plugins)
+            {
+                agentKernel.Plugins.Add(plugin);
+            }
         }
 
         var args = new KernelArguments(
