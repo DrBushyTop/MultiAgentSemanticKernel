@@ -86,7 +86,7 @@ if (string.IsNullOrWhiteSpace(mode))
 }
 
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Main");
-logger.LogInformation("Mode: {Mode}; Prompt: {Prompt}", mode, string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
+logger.LogDebug("Mode: {Mode}; Prompt: {Prompt}", mode, string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
 
 int exitCode = 0;
 try

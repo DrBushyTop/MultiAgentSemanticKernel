@@ -39,7 +39,7 @@ public sealed class AnsiCliWriter : ICliWriter
         lock (_lock)
         {
             Console.Write("\x1b[32m"); // green
-            Console.Write("✔ ");
+            Console.Write("💬 ");
             Console.Write(agentName);
             Console.Write("\x1b[0m");
             Console.WriteLine();
