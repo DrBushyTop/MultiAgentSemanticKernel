@@ -6,6 +6,8 @@ public interface ICliWriter
 {
     void AgentStart(string agentName, string? detail = null);
     void AgentResult(string agentName, string result);
+    void ToolStart(string agentName, string plugin, string function);
+    void ToolEnd(string agentName, string plugin, string function, bool success);
     void Info(string message);
     void Warn(string message);
 }
@@ -42,6 +44,50 @@ public sealed class AnsiCliWriter : ICliWriter
             Console.Write("\x1b[0m");
             Console.WriteLine();
             Console.WriteLine(result);
+            Console.WriteLine();
+        }
+    }
+
+    public void ToolStart(string agentName, string plugin, string function)
+    {
+        lock (_lock)
+        {
+            Console.Write("\x1b[2m"); // dim
+            Console.Write("🔧 ");
+            Console.Write("\x1b[36m"); // cyan plugin
+            Console.Write(plugin);
+            Console.Write("\x1b[0m");
+            Console.Write(".");
+            Console.Write("\x1b[35m"); // magenta function
+            Console.Write(function);
+            Console.Write("\x1b[0m");
+            Console.Write(" by ");
+            Console.Write("\x1b[36m"); // cyan agent
+            Console.Write(agentName);
+            Console.Write("\x1b[0m");
+            Console.WriteLine();
+        }
+    }
+
+    public void ToolEnd(string agentName, string plugin, string function, bool success)
+    {
+        lock (_lock)
+        {
+            Console.Write(success ? "\x1b[32m" : "\x1b[31m"); // green or red
+            Console.Write(success ? "✔ " : "✖ ");
+            Console.Write("\x1b[0m");
+            Console.Write("🔧 ");
+            Console.Write("\x1b[36m"); // cyan plugin
+            Console.Write(plugin);
+            Console.Write("\x1b[0m");
+            Console.Write(".");
+            Console.Write("\x1b[35m"); // magenta function
+            Console.Write(function);
+            Console.Write("\x1b[0m");
+            Console.Write(" by ");
+            Console.Write("\x1b[36m"); // cyan agent
+            Console.Write(agentName);
+            Console.Write("\x1b[0m");
             Console.WriteLine();
         }
     }

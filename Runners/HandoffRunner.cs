@@ -82,13 +82,7 @@ Rules:
         var planner = AgentUtils.Create(name: "FixPlanner", description: "Agent Responsible for planning a Fix", instructions: plannerInstructions, kernel: kernel);
 
         // --- Logging callback with handoff/final markers ---
-        ValueTask ResponseCallback(ChatMessageContent response)
-        {
-            var author = string.IsNullOrWhiteSpace(response.AuthorName) ? "Agent" : response.AuthorName;
-            var content = response.Content ?? string.Empty;
-
-            return ValueTask.CompletedTask;
-        }
+        var ResponseCallback = AgentResponseCallbacks.Create(cli);
 
         // --- Minimal handoff graph: 5 edges ---
         var handoffs = OrchestrationHandoffs
@@ -109,10 +103,7 @@ Rules:
 
         // Kick off with the original prompt; agents use MiniIncidentPlugin.* to persist state under incidentId.
         var result = await orchestration.InvokeAsync(prompt + $"\n\n[incidentId: {incidentId}]", runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-
-        cli.Info("# RESULT");
-        cli.Info(output);
+        await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
         // Print compact state summary for the demo
         cli.Info("# STATE");

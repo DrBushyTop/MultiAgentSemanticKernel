@@ -34,12 +34,7 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
         var roller = AgentUtils.Create(name: "Roller", description: "Drafts rollback plan and safety checks if mitigation fails.", instructions: "Plan rollback if needed. Use Deploy_Rollback(service, toVersion?) to outline steps and risks. Only respond with the result, no fluff, be concise.", kernel: kernel);
         var notifier = AgentUtils.Create(name: "Notifier", description: "Prepares concise incident updates for stakeholder communications.", instructions: "Post incident summary to comms. Use Comms_Post(channel, message) to share updates. Only respond with the result, no fluff, be concise.", kernel: kernel);
 
-        ValueTask ResponseCallback(ChatMessageContent response)
-        {
-            var author = string.IsNullOrWhiteSpace(response.AuthorName) ? "Agent" : response.AuthorName;
-            cli.AgentResult(author!, response.Content ?? string.Empty);
-            return ValueTask.CompletedTask;
-        }
+        var ResponseCallback = AgentResponseCallbacks.Create(cli);
 
         var manager = new StandardMagenticManager(
             kernel.GetRequiredService<IChatCompletionService>(),
@@ -57,10 +52,7 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
         await runtime.StartAsync();
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-
-        cli.Info("# RESULT");
-        cli.Info(output);
+        await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
         await runtime.RunUntilIdleAsync();
     }

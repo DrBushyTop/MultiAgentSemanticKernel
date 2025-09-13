@@ -96,12 +96,7 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
             instructions: "Check secrets and license headers. Use Git_GetPRDiff(prText) to get changed files and diff; run Secret_Scan(diffJson) and License_CheckHeaders(filesJson). Report any concerns. Only respond with the result, no fluff, be concise.",
             kernel: kernel);
 
-        ValueTask ResponseCallback(ChatMessageContent response)
-        {
-            var author = string.IsNullOrWhiteSpace(response.AuthorName) ? "Agent" : response.AuthorName;
-            cli.AgentResult(author!, response.Content ?? string.Empty);
-            return ValueTask.CompletedTask;
-        }
+        var ResponseCallback = AgentResponseCallbacks.Create(cli);
 
         var orchestration = new ConcurrentOrchestration(diffAnalyst, testImpactor, secLint, compliance)
         {

@@ -1,6 +1,7 @@
 using Microsoft.SemanticKernel;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Linq;
 
 namespace MultiAgentSemanticKernel.Runtime;
 
@@ -23,41 +24,20 @@ public sealed class ConsoleFunctionInvocationFilter : IFunctionInvocationFilter
         var pluginName = context.Function.PluginName;
         var caller = _id?.Name ?? "Agent";
 
-        string argsPreview;
-        try
-        {
-            var keys = context.Arguments.Keys.ToArray();
-            var pairs = keys.Select(k => $"{k}={FormatValue(context.Arguments[k])}");
-            argsPreview = string.Join(", ", pairs);
-        }
-        catch
-        {
-            argsPreview = "<args unavailable>";
-        }
-
-        var header = $"🤖 {caller} → 🔧 {pluginName}.{functionName}";
-        _cli.AgentStart(header, argsPreview);
-        _log?.LogInformation("Agent {Agent} called {Plugin}.{Func} with {Args}", caller, pluginName, functionName, argsPreview);
+        _cli.ToolStart(caller, pluginName ?? "", functionName);
+        _log?.LogInformation("🔧 {Plugin}.{Func} by {Agent}", pluginName, functionName, caller);
 
         await next(context);
 
         try
         {
-            var resultText = context.Result?.GetValue<string?>() ?? "<no result>";
-            _cli.AgentResult($"{caller}", resultText);
+            _cli.ToolEnd(caller, pluginName ?? "", functionName, success: true);
         }
         catch
         {
-            // ignore formatting issues
+            _cli.ToolEnd(caller, pluginName ?? "", functionName, success: false);
         }
     }
 
-    private static string FormatValue(object? value)
-        => value switch
-        {
-            null => "null",
-            string s when s.Length > 120 => JsonSerializer.Serialize(s[..120] + "…"),
-            string s => JsonSerializer.Serialize(s),
-            _ => JsonSerializer.Serialize(value)
-        };
+    // No value formatting needed; we no longer log params/results for tools
 }

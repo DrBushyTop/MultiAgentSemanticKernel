@@ -53,12 +53,7 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
             instructions: "Draft README + endpoint docs summary. Use Docs_Update(branch, summary) to open a PR when appropriate.",
             kernel: kernel);
 
-        ValueTask ResponseCallback(ChatMessageContent response)
-        {
-            var author = string.IsNullOrWhiteSpace(response.AuthorName) ? "Agent" : response.AuthorName;
-            cli.AgentResult(author!, response.Content ?? string.Empty);
-            return ValueTask.CompletedTask;
-        }
+        var ResponseCallback = AgentResponseCallbacks.Create(cli);
 
         var orchestration = new SequentialOrchestration(backlogRefiner, apiDesigner, scaffolder, testWriter, docWriter)
         {
@@ -70,10 +65,7 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
         await runtime.StartAsync();
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(300));
-
-        cli.Info("# RESULT");
-        cli.Info(output);
+        await result.GetValueAsync(TimeSpan.FromSeconds(300));
 
         await runtime.RunUntilIdleAsync();
     }
