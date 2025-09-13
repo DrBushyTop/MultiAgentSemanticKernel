@@ -103,9 +103,11 @@ Rules:
 
         // Kick off with the original prompt; agents use MiniIncidentPlugin.* to persist state under incidentId.
         var result = await orchestration.InvokeAsync(prompt + $"\n\n[incidentId: {incidentId}]", runtime);
-        await result.GetValueAsync(TimeSpan.FromSeconds(120));
+        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
         // Print compact state summary for the demo
+        cli.Info("####### RESULT #######\n");
+        cli.Info(output);
         cli.Info("# STATE");
         cli.Info(state.Summarize(incidentId));
 

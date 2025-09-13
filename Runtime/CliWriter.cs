@@ -75,7 +75,7 @@ public sealed class AnsiCliWriter : ICliWriter
         {
             Console.Write(success ? "\x1b[32m" : "\x1b[31m"); // green or red
             Console.Write(success ? "✔ " : "✖ ");
-            Console.Write("\x1b[0m");
+            Console.Write("\x1b[2m"); // dim
             Console.Write("🔧 ");
             Console.Write("\x1b[36m"); // cyan plugin
             Console.Write(plugin);
@@ -96,6 +96,7 @@ public sealed class AnsiCliWriter : ICliWriter
     {
         lock (_lock)
         {
+            Console.Write("\x1b[34mℹ\x1b[0m "); // blue info
             Console.WriteLine(message);
         }
     }
@@ -109,5 +110,3 @@ public sealed class AnsiCliWriter : ICliWriter
         }
     }
 }
-
-

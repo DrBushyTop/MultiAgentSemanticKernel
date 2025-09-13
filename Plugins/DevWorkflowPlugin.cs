@@ -26,12 +26,12 @@ public sealed class DevWorkflowPlugin
            "  ]\n" +
            "}";
 
-    [KernelFunction, Description("Commit changes")]
-    public string Repo_Commit([Description("branch")] string branch, [Description("changes JSON")] string changes)
+    [KernelFunction, Description("Scaffold service")]
+    public string Create_Scaffold([Description("branch")] string branch)
         => "{\n" +
            "  \"commitSha\": \"a1b2c3d\",\n" +
            "  \"branch\": \"" + branch + "\",\n" +
-           "  \"summary\": \"Committed scaffold and tests\",\n" +
+           "  \"summary\": \"Committed scaffold\",\n" +
            "  \"commands\": [\n" +
            "    \"git add .\",\n" +
            "    \"git commit -m 'Scaffold service and add tests'\",\n" +
@@ -61,5 +61,3 @@ public sealed class DevWorkflowPlugin
            "  \"checklist\": [\"Docs updated\", \"Tests added\", \"API reviewed\"]\n" +
            "}";
 }
-
-

@@ -19,11 +19,7 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = """
-            Analyze the following pull request. Provide a concise, bullet-style summary covering:
-            - Diff size and hotspots
-            - Impacted test suites and rough runtime estimate
-            - Security/lint concerns
-            - Compliance/secrets/license concerns
+            Analyze the following pull request. Provide a concise summary.
 
             PR: feat(auth): add input validation and fix null handling
 
@@ -96,12 +92,12 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
             instructions: "Check secrets and license headers. Use Git_GetPRDiff(prText) to get changed files and diff; run Secret_Scan(diffJson) and License_CheckHeaders(filesJson). Report any concerns. Only respond with the result, no fluff, be concise.",
             kernel: kernel);
 
-        var ResponseCallback = AgentResponseCallbacks.Create(cli);
+        var responseCallback = AgentResponseCallbacks.Create(cli);
 
         var orchestration = new ConcurrentOrchestration(diffAnalyst, testImpactor, secLint, compliance)
         {
             LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = ResponseCallback,
+            ResponseCallback = responseCallback,
         };
 
         var runtime = new InProcessRuntime();
