@@ -55,6 +55,7 @@ builder.Services.AddSingleton(sp =>
 });
 
 builder.Services.AddSingleton<DemoPlugin>();
+builder.Services.AddSingleton<DevOpsToolsPlugin>();
 
 builder.Services.AddSingleton<SequentialRunner>();
 builder.Services.AddSingleton<ConcurrentRunner>();
@@ -67,6 +68,7 @@ var host = builder.Build();
 // Post-build registrations
 var kernel = host.Services.GetRequiredService<Kernel>();
 kernel.ImportPluginFromType<DemoPlugin>();
+kernel.ImportPluginFromType<DevOpsToolsPlugin>();
 
 // Minimal CLI handling: first arg = mode, second (optional) = prompt
 var mode = args.Length > 0 ? args[0] : string.Empty;
