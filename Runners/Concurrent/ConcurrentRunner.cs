@@ -7,8 +7,8 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
 {
     public async Task RunAsync(string prompt)
     {
-        logger.LogInformation("[Concurrent] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
-        await Task.CompletedTask; // Stub for future implementation
+        logger.LogWarning("[Concurrent] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
+        await Task.CompletedTask; // Stub
     }
 }
 

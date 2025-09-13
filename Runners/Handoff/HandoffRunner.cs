@@ -7,8 +7,8 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger)
 {
     public async Task RunAsync(string prompt)
     {
-        logger.LogInformation("[Handoff] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
-        await Task.CompletedTask; // Stub for future implementation
+        logger.LogWarning("[Handoff] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
+        await Task.CompletedTask; // Stub
     }
 }
 

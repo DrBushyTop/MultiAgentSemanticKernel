@@ -18,9 +18,20 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables(prefix: "MASKE_");
 
+// Quiet console: only warnings and above via logger; demo output goes via CLI writer
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(o =>
+{
+    o.SingleLine = true;
+    o.TimestampFormat = "HH:mm:ss ";
+    o.IncludeScopes = false;
+});
+builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
 builder.Services.Configure<AzureOpenAIOptions>(builder.Configuration.GetSection("AzureOpenAI"));
 
 builder.Services.AddSingleton<DefaultAzureCredential>(_ => new DefaultAzureCredential());
+builder.Services.AddSingleton<ICliWriter, AnsiCliWriter>();
 
 builder.Services.AddSingleton(sp =>
 {
@@ -29,16 +40,13 @@ builder.Services.AddSingleton(sp =>
 
     var kernelBuilder = Kernel.CreateBuilder();
 
+    // Ensure the kernel's own service provider has the CLI writer for filters
+    kernelBuilder.Services.AddSingleton<ICliWriter, AnsiCliWriter>();
+
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: options.Deployments.Llm,
         endpoint: options.Endpoint,
         credentials: credential);
-
-    kernelBuilder.Services.AddLogging(l => l.AddSimpleConsole(o =>
-    {
-        o.SingleLine = true;
-        o.TimestampFormat = "HH:mm:ss ";
-    }));
 
     // Register filters via DI per SK guidance
     kernelBuilder.Services.AddSingleton<IFunctionInvocationFilter, ConsoleFunctionInvocationFilter>();

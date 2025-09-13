@@ -7,8 +7,8 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
 {
     public async Task RunAsync(string prompt)
     {
-        logger.LogInformation("[GroupChat] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
-        await Task.CompletedTask; // Stub for future implementation
+        logger.LogWarning("[GroupChat] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
+        await Task.CompletedTask; // Stub
     }
 }
 
