@@ -15,7 +15,52 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            var defaultPrompt = "Analyze a small PR in parallel and summarize risk.";
+            var defaultPrompt = """
+            Analyze the following pull request. Provide a concise, bullet-style summary covering:
+            - Diff size and hotspots
+            - Impacted test suites and rough runtime estimate
+            - Security/lint concerns
+            - Compliance/secrets/license concerns
+
+            PR: feat(auth): add input validation and fix null handling
+
+            Description:
+            - Add basic server-side validation to signup flow
+            - Fix potential null reference in UserService
+            - Minor UI tweak in SignupForm and dep bump
+
+            Files changed (5):
+            1) src/Controllers/AuthController.cs (+23 −4)
+            2) src/Services/UserService.cs (+18 −6)
+            3) src/Models/SignupRequest.cs (+12 −0)
+            4) web/Frontend/components/SignupForm.tsx (+9 −2)
+            5) package.json (+1 −1)
+
+            Relevant diffs (snippets):
+            --- a/src/Services/UserService.cs
+            +++ b/src/Services/UserService.cs
+            @@ -42,7 +42,13 @@
+            - var user = await _repo.FindByEmailAsync(request.Email);
+            - if (user.IsActive) { /* ... */ }
+            + var user = await _repo.FindByEmailAsync(request.Email);
+            + if (user == null)
+            + {
+            +     _logger.LogWarning("Signup requested for unknown email {Email}", request.Email);
+            +     throw new NotFoundException("User not found");
+            + }
+            + if (user.IsActive) { /* ... */ }
+
+            --- a/src/Controllers/AuthController.cs
+            +++ b/src/Controllers/AuthController.cs
+            @@ -88,3 +102,12 @@
+            - return Ok(await _service.Signup(request));
+            + if (!ModelState.IsValid) return BadRequest(ModelState);
+            + return Ok(await _service.Signup(request));
+
+            Constraints:
+            - Tests live under tests/ and follow *Tests.cs naming
+            - Assume CI has 8 parallel workers available
+            """;
             logger.LogWarning("[Concurrent] Using default prompt: {Prompt}", defaultPrompt);
             prompt = defaultPrompt;
         }
@@ -77,16 +122,7 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         await runtime.StartAsync();
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
-        var outputs = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-
-        if (outputs is { } lines)
-        {
-            cli.Info("# RESULT");
-            foreach (var line in lines)
-            {
-                cli.Info(line);
-            }
-        }
+        await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
         await runtime.RunUntilIdleAsync();
     }

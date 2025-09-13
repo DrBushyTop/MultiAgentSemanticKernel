@@ -21,10 +21,7 @@ public sealed class ConsoleFunctionInvocationFilter : IFunctionInvocationFilter
 
         await next(context);
 
-        var text = context.Result?.GetValue<string>();
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            _cli.AgentResult(agent, text!);
-        }
+        // var text = context.Result?.GetValue<string>();
+        // _cli.AgentResult(agent, text ?? "<no result>");
     }
 }

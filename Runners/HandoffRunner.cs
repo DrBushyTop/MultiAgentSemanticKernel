@@ -15,6 +15,7 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
 {
     public async Task RunAsync(string prompt)
     {
+
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = "Ticket INC-1234: Customer checkout fails with NullReferenceException in Guid parsing.";
@@ -40,49 +41,46 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
 
         // --- Super-minimal agent contracts ---
         const string triageInstructions =
-            @"You are TriageAgent. Set Severity (Sev1..Sev4) and a minimal Signal (free text).
-Persist ONLY via MiniIncident.SetSeverity(id, severity, signal?).
-If reproduction is needed → output 'HANDOFF: ReproAgent | need repro'.
-Otherwise → output 'HANDOFF: FixPlanner'.
-Never finalize.
-Only respond with the result, no fluff, be concise.";
+            @"You are TriageAgent. Your job is to set initial severity and then transfer control using the orchestration handoff tool.
+
+Rules:
+- Persist ONLY via MiniIncidentPlugin.SetSeverity(id, severity, signal?).
+- The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
+- After setting severity, decide:
+  • If a reproduction is required → hand off to ReproAgent.
+  • If a deterministic repro already exists → hand off to FixPlanner.
+- Do not ask the end user questions; proceed autonomously.
+- Use the provided handoff tool to transfer to the chosen agent; do not terminate the conversation yourself.";
 
         const string reproInstructions =
-            @"You are ReproAgent. Produce deterministic reproduction.
-Persist via MiniIncident.SetRepro(id, status, blocker?) where status is Confirmed or Blocked.
-If Confirmed → output 'HANDOFF: FixPlanner'.
-If Blocked → output 'HANDOFF: TriageAgent | missing <x>'.
-Only respond with the result, no fluff, be concise.";
+            @"You are ReproAgent. Produce a deterministic reproduction for the incident.
+
+Rules:
+- Persist via MiniIncidentPlugin.SetRepro(id, status, blocker?) where status is Confirmed or Blocked.
+- The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
+- If status is Confirmed → hand off to FixPlanner.
+- If status is Blocked → hand off to TriageAgent to resolve blockers (do not ask the end user).
+- Use the orchestration handoff tool to transfer; do not terminate.";
 
         const string plannerInstructions =
             @"You are FixPlanner. Propose a plan with Action(Hotfix|Rollback|FlagFlip|Investigate) and Decision(Go|NoGo).
-Persist via MiniIncident.SetPlan(id, action, decision).
-If missing repro → output 'HANDOFF: ReproAgent'.
-When complete, call MiniIncident.MarkDone(id) and reply 'FINAL: plan=<Decision> action=<Action>'.
-Only respond with the result, no fluff, be concise.";
 
-        var triage = new ChatCompletionAgent { Name = "TriageAgent", Instructions = triageInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var repro = new ChatCompletionAgent { Name = "ReproAgent", Instructions = reproInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var planner = new ChatCompletionAgent { Name = "FixPlanner", Instructions = plannerInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+Rules:
+- Persist via MiniIncidentPlugin.SetPlan(id, action, decision).
+- The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
+- When complete, call MiniIncidentPlugin.MarkDone(id) and reply EXACTLY:
+  FINAL: plan=<Decision> action=<Action>
+- Do not hand off after finalization.";
+
+        var triage = new ChatCompletionAgent { Name = "TriageAgent", Description = "Agent responsible for Triaging", Instructions = triageInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var repro = new ChatCompletionAgent { Name = "ReproAgent", Description = "Agent responsible for Reproducing Bugs" , Instructions = reproInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var planner = new ChatCompletionAgent { Name = "FixPlanner", Description = "Agent Responsible for planning a Fix", Instructions = plannerInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
 
         // --- Logging callback with handoff/final markers ---
         ValueTask ResponseCallback(ChatMessageContent response)
         {
             var author = string.IsNullOrWhiteSpace(response.AuthorName) ? "Agent" : response.AuthorName;
             var content = response.Content ?? string.Empty;
-
-            if (content.StartsWith("HANDOFF:", StringComparison.OrdinalIgnoreCase))
-            {
-                cli.Info($"🔁 {author} → {content}");
-            }
-            else if (content.StartsWith("FINAL:", StringComparison.OrdinalIgnoreCase))
-            {
-                cli.Info($"✅ {author} → {content}");
-            }
-            else
-            {
-                cli.AgentResult(author!, content);
-            }
 
             return ValueTask.CompletedTask;
         }
@@ -91,9 +89,9 @@ Only respond with the result, no fluff, be concise.";
         var handoffs = OrchestrationHandoffs
             .StartWith(triage)
             .Add(triage, repro, planner)
-            .Add(repro, planner, "Repro confirmed")
-            .Add(repro, triage, "Repro blocked, need info")
-            .Add(planner, repro, "Plan needs confirmed repro");
+            .Add(planner, repro, "Transfer to this agent when plan needs confirmed repro")
+            .Add(repro, planner, "Transfer to this agent when repro confirmed")
+            .Add(repro, triage, "Transfer to this agent when repro blocked, need info");
 
         var orchestration = new HandoffOrchestration(handoffs, triage, repro, planner)
         {
@@ -104,7 +102,7 @@ Only respond with the result, no fluff, be concise.";
         var runtime = new InProcessRuntime();
         await runtime.StartAsync();
 
-        // Kick off with the original prompt; agents use MiniIncident.* to persist state under incidentId.
+        // Kick off with the original prompt; agents use MiniIncidentPlugin.* to persist state under incidentId.
         var result = await orchestration.InvokeAsync(prompt + $"\n\n[incidentId: {incidentId}]", runtime);
         var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
