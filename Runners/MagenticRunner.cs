@@ -25,11 +25,11 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
             logger.LogWarning("[Magentic] Starting with prompt: {Prompt}", prompt);
         }
 
-        var logSearcher = new ChatCompletionAgent { Name = "LogSearcher", Instructions = "Use logs to find recent errors and anomalies.", Kernel = kernel };
-        var deployInspector = new ChatCompletionAgent { Name = "DeployInspector", Instructions = "Compare last deploys to spot regressions.", Kernel = kernel };
-        var flagger = new ChatCompletionAgent { Name = "FeatureFlagger", Instructions = "Get/set feature flags to mitigate.", Kernel = kernel };
-        var roller = new ChatCompletionAgent { Name = "Roller", Instructions = "Plan rollback if needed.", Kernel = kernel };
-        var notifier = new ChatCompletionAgent { Name = "Notifier", Instructions = "Post incident summary to comms.", Kernel = kernel };
+        var logSearcher = new ChatCompletionAgent { Name = "LogSearcher", Instructions = "Use logs to find recent errors and anomalies. Only respond with the result, no fluff, be concise.", Description = "Surfaces recent error spikes and anomalous patterns from logs.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var deployInspector = new ChatCompletionAgent { Name = "DeployInspector", Instructions = "Compare last deploys to spot regressions. Only respond with the result, no fluff, be concise.", Description = "Correlates recent deploys with regressions and notable changes.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var flagger = new ChatCompletionAgent { Name = "FeatureFlagger", Instructions = "Get/set feature flags to mitigate. Only respond with the result, no fluff, be concise.", Description = "Assesses and recommends feature flag flips to reduce impact.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var roller = new ChatCompletionAgent { Name = "Roller", Instructions = "Plan rollback if needed. Only respond with the result, no fluff, be concise.", Description = "Drafts rollback plan and safety checks if mitigation fails.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var notifier = new ChatCompletionAgent { Name = "Notifier", Instructions = "Post incident summary to comms. Only respond with the result, no fluff, be concise.", Description = "Prepares concise incident updates for stakeholder communications.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
 
         ValueTask ResponseCallback(ChatMessageContent response)
         {
@@ -46,6 +46,7 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
         };
         var orchestration = new MagenticOrchestration(manager, logSearcher, deployInspector, flagger, roller, notifier)
         {
+            LoggerFactory = kernel.LoggerFactory,
             ResponseCallback = ResponseCallback,
         };
 

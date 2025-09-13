@@ -34,7 +34,7 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
         // --- Tiny baton/state plugin ---
         var state = new MiniIncidentPlugin();
         state.Init(incidentId);
-        var statePlugin = KernelPluginFactory.CreateFromObject(state);
+        var statePlugin = KernelPluginFactory.CreateFromObject(state, pluginName: null, loggerFactory: kernel.LoggerFactory);
         // Single Kernel instance is shared; add plugin once
         kernel.Plugins.Add(statePlugin);
 
@@ -44,23 +44,26 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
 Persist ONLY via MiniIncident.SetSeverity(id, severity, signal?).
 If reproduction is needed → output 'HANDOFF: ReproAgent | need repro'.
 Otherwise → output 'HANDOFF: FixPlanner'.
-Never finalize.";
+Never finalize.
+Only respond with the result, no fluff, be concise.";
 
         const string reproInstructions =
             @"You are ReproAgent. Produce deterministic reproduction.
 Persist via MiniIncident.SetRepro(id, status, blocker?) where status is Confirmed or Blocked.
 If Confirmed → output 'HANDOFF: FixPlanner'.
-If Blocked → output 'HANDOFF: TriageAgent | missing <x>'.";
+If Blocked → output 'HANDOFF: TriageAgent | missing <x>'.
+Only respond with the result, no fluff, be concise.";
 
         const string plannerInstructions =
             @"You are FixPlanner. Propose a plan with Action(Hotfix|Rollback|FlagFlip|Investigate) and Decision(Go|NoGo).
 Persist via MiniIncident.SetPlan(id, action, decision).
 If missing repro → output 'HANDOFF: ReproAgent'.
-When complete, call MiniIncident.MarkDone(id) and reply 'FINAL: plan=<Decision> action=<Action>'.";
+When complete, call MiniIncident.MarkDone(id) and reply 'FINAL: plan=<Decision> action=<Action>'.
+Only respond with the result, no fluff, be concise.";
 
-        var triage = new ChatCompletionAgent { Name = "TriageAgent", Instructions = triageInstructions, Kernel = kernel };
-        var repro = new ChatCompletionAgent { Name = "ReproAgent", Instructions = reproInstructions, Kernel = kernel };
-        var planner = new ChatCompletionAgent { Name = "FixPlanner", Instructions = plannerInstructions, Kernel = kernel };
+        var triage = new ChatCompletionAgent { Name = "TriageAgent", Instructions = triageInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var repro = new ChatCompletionAgent { Name = "ReproAgent", Instructions = reproInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var planner = new ChatCompletionAgent { Name = "FixPlanner", Instructions = plannerInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
 
         // --- Logging callback with handoff/final markers ---
         ValueTask ResponseCallback(ChatMessageContent response)
@@ -94,6 +97,7 @@ When complete, call MiniIncident.MarkDone(id) and reply 'FINAL: plan=<Decision> 
 
         var orchestration = new HandoffOrchestration(handoffs, triage, repro, planner)
         {
+            LoggerFactory = kernel.LoggerFactory,
             ResponseCallback = ResponseCallback,
         };
 

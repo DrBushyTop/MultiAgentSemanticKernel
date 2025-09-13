@@ -26,7 +26,7 @@ builder.Logging.AddSimpleConsole(o =>
     o.TimestampFormat = "HH:mm:ss ";
     o.IncludeScopes = false;
 });
-// builder.Logging.SetMinimumLevel(LogLevel.Warning);
+builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 builder.Services.Configure<AzureOpenAIOptions>(builder.Configuration.GetSection("AzureOpenAI"));
 
@@ -37,11 +37,19 @@ builder.Services.AddSingleton(sp =>
 {
     var options = sp.GetRequiredService<IOptions<AzureOpenAIOptions>>().Value;
     var credential = sp.GetRequiredService<DefaultAzureCredential>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var enableAgentLogging = sp.GetRequiredService<IConfiguration>().GetValue<bool>("EnableAgentLogging");
 
     var kernelBuilder = Kernel.CreateBuilder();
 
     // Ensure the kernel's own service provider has the CLI writer for filters
     kernelBuilder.Services.AddSingleton<ICliWriter, AnsiCliWriter>();
+    if (enableAgentLogging)
+    {
+        // Use the host logger factory inside the kernel so agents/orchestrations can log
+        kernelBuilder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
+        kernelBuilder.Services.AddLogging();
+    }
 
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: options.Deployments.Llm,

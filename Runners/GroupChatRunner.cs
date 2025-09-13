@@ -24,10 +24,10 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
             logger.LogWarning("[GroupChat] Starting with prompt: {Prompt}", prompt);
         }
 
-        var techLead = new ChatCompletionAgent { Name = "TechLead", Instructions = "Assess feasibility and complexity; propose deployment approach. Max 100 words.", Kernel = kernel };
-        var sre = new ChatCompletionAgent { Name = "SRE", Instructions = "Evaluate reliability, error budget, rollout, and operational risk. Max 100 words.", Kernel = kernel };
-        var security = new ChatCompletionAgent { Name = "Security", Instructions = "Assess threat model, secrets handling, egress. Max 100 words.", Kernel = kernel };
-        var dataEng = new ChatCompletionAgent { Name = "DataEng", Instructions = "Cover schema, migration strategy, data implications. Max 100 words.", Kernel = kernel };
+        var techLead = new ChatCompletionAgent { Name = "TechLead", Instructions = "Assess feasibility and complexity; propose deployment approach. Only respond with the result, no fluff, be concise.", Description = "Balances scope, complexity, and delivery approach; proposes rollout strategy.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var sre = new ChatCompletionAgent { Name = "SRE", Instructions = "Evaluate reliability, error budget, rollout, and operational risk. Only respond with the result, no fluff, be concise.", Description = "Evaluates reliability, SLO/SLA impact, rollout safeguards, and ops risk.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var security = new ChatCompletionAgent { Name = "Security", Instructions = "Assess threat model, secrets handling, egress. Only respond with the result, no fluff, be concise.", Description = "Reviews threat model, secrets/egress handling, and key security risks.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var dataEng = new ChatCompletionAgent { Name = "DataEng", Instructions = "Cover schema, migration strategy, data implications. Only respond with the result, no fluff, be concise.", Description = "Covers schema changes, migration plan, data quality and footprint.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
 
         ValueTask ResponseCallback(ChatMessageContent response)
         {
@@ -39,6 +39,7 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
         var manager = new RoundRobinGroupChatManager { MaximumInvocationCount = 5 };
         var orchestration = new GroupChatOrchestration(manager, techLead, sre, security, dataEng)
         {
+            LoggerFactory = kernel.LoggerFactory,
             ResponseCallback = ResponseCallback,
         };
 
