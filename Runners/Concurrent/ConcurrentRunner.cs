@@ -70,7 +70,7 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         var result = await orchestration.InvokeAsync(prompt, runtime);
         var outputs = await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
-        if (outputs is string[] lines)
+        if (outputs is { } lines)
         {
             cli.Info("# RESULT");
             foreach (var line in lines)
@@ -82,5 +82,3 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         await runtime.RunUntilIdleAsync();
     }
 }
-
-

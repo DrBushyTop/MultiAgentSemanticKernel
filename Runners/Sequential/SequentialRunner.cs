@@ -79,5 +79,3 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
         await runtime.RunUntilIdleAsync();
     }
 }
-
-

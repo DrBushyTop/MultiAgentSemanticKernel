@@ -19,14 +19,14 @@ builder.Configuration
     .AddEnvironmentVariables(prefix: "MASKE_");
 
 // Quiet console: only warnings and above via logger; demo output goes via CLI writer
-builder.Logging.ClearProviders();
+// builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(o =>
 {
     o.SingleLine = true;
     o.TimestampFormat = "HH:mm:ss ";
     o.IncludeScopes = false;
 });
-builder.Logging.SetMinimumLevel(LogLevel.Warning);
+// builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 builder.Services.Configure<AzureOpenAIOptions>(builder.Configuration.GetSection("AzureOpenAI"));
 
