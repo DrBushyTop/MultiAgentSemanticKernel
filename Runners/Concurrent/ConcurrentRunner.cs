@@ -13,11 +13,15 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
 {
     public async Task RunAsync(string prompt)
     {
-        logger.LogWarning("[Concurrent] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
-
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            prompt = "Analyze a small PR in parallel and summarize risk.";
+            var defaultPrompt = "Analyze a small PR in parallel and summarize risk.";
+            logger.LogWarning("[Concurrent] Using default prompt: {Prompt}", defaultPrompt);
+            prompt = defaultPrompt;
+        }
+        else
+        {
+            logger.LogWarning("[Concurrent] Starting with prompt: {Prompt}", prompt);
         }
 
         var diffAnalyst = new ChatCompletionAgent
@@ -64,7 +68,7 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         await runtime.StartAsync();
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
-        var outputs = await result.GetValueAsync(TimeSpan.FromSeconds(60));
+        var outputs = await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
         if (outputs is string[] lines)
         {

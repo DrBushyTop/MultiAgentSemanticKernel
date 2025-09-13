@@ -13,11 +13,15 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
 {
     public async Task RunAsync(string prompt)
     {
-        logger.LogWarning("[Sequential] Starting with prompt: {Prompt}", string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
-
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            prompt = "As a user, I can upload avatars up to 2MB. Add 3 acceptance criteria.";
+            var defaultPrompt = "As a user, I can upload avatars up to 2MB. Add 3 acceptance criteria.";
+            logger.LogWarning("[Sequential] Using default prompt: {Prompt}", defaultPrompt);
+            prompt = defaultPrompt;
+        }
+        else
+        {
+            logger.LogWarning("[Sequential] Starting with prompt: {Prompt}", prompt);
         }
 
         var backlogRefiner = new ChatCompletionAgent
@@ -67,7 +71,7 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
         await runtime.StartAsync();
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(60));
+        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
 
         cli.Info("# RESULT");
         cli.Info(output);
