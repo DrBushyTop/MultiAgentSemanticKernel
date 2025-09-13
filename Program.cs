@@ -62,7 +62,7 @@ builder.Services.AddSingleton(sp =>
     return kernelBuilder.Build();
 });
 
-builder.Services.AddSingleton<DevOpsToolsPlugin>();
+// Plugins are imported per-runner, not globally
 
 builder.Services.AddSingleton<SequentialRunner>();
 builder.Services.AddSingleton<ConcurrentRunner>();
@@ -72,9 +72,8 @@ builder.Services.AddSingleton<MagenticRunner>();
 
 var host = builder.Build();
 
-// Post-build registrations
+// Post-build: Runners will import only the plugins they require
 var kernel = host.Services.GetRequiredService<Kernel>();
-kernel.ImportPluginFromType<DevOpsToolsPlugin>();
 
 // Minimal CLI handling: first arg = mode, second (optional) = prompt
 var mode = args.Length > 0 ? args[0] : string.Empty;

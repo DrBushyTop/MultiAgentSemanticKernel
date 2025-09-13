@@ -7,6 +7,7 @@ using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using MultiAgentSemanticKernel.Runtime;
+using MultiAgentSemanticKernel.Plugins;
 
 namespace MultiAgentSemanticKernel.Runners;
 
@@ -14,6 +15,8 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
 {
     public async Task RunAsync(string prompt)
     {
+        // Import only ops tools for this runner
+        kernel.ImportPluginFromType<OpsPlugin>();
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = "Stabilize error budget for service 'catalog' given elevated p95 and 5xx.";
@@ -25,11 +28,11 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
             logger.LogWarning("[Magentic] Starting with prompt: {Prompt}", prompt);
         }
 
-        var logSearcher = new ChatCompletionAgent { Name = "LogSearcher", Instructions = "Use logs to find recent errors and anomalies. Only respond with the result, no fluff, be concise.", Description = "Surfaces recent error spikes and anomalous patterns from logs.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var deployInspector = new ChatCompletionAgent { Name = "DeployInspector", Instructions = "Compare last deploys to spot regressions. Only respond with the result, no fluff, be concise.", Description = "Correlates recent deploys with regressions and notable changes.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var flagger = new ChatCompletionAgent { Name = "FeatureFlagger", Instructions = "Get/set feature flags to mitigate. Only respond with the result, no fluff, be concise.", Description = "Assesses and recommends feature flag flips to reduce impact.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var roller = new ChatCompletionAgent { Name = "Roller", Instructions = "Plan rollback if needed. Only respond with the result, no fluff, be concise.", Description = "Drafts rollback plan and safety checks if mitigation fails.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var notifier = new ChatCompletionAgent { Name = "Notifier", Instructions = "Post incident summary to comms. Only respond with the result, no fluff, be concise.", Description = "Prepares concise incident updates for stakeholder communications.", Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var logSearcher = AgentUtils.Create(name: "LogSearcher", description: "Surfaces recent error spikes and anomalous patterns from logs.", instructions: "Use logs to find recent errors and anomalies. Only respond with the result, no fluff, be concise.", kernel: kernel);
+        var deployInspector = AgentUtils.Create(name: "DeployInspector", description: "Correlates recent deploys with regressions and notable changes.", instructions: "Compare last deploys to spot regressions. Use Deploy_Status(service) and Deploy_Diff(prevVersion) to summarize. Only respond with the result, no fluff, be concise.", kernel: kernel);
+        var flagger = AgentUtils.Create(name: "FeatureFlagger", description: "Assesses and recommends feature flag flips to reduce impact.", instructions: "Get/set feature flags to mitigate. Use FeatureFlags_Get(key) to check flags and recommend flips. Only respond with the result, no fluff, be concise.", kernel: kernel);
+        var roller = AgentUtils.Create(name: "Roller", description: "Drafts rollback plan and safety checks if mitigation fails.", instructions: "Plan rollback if needed. Use Deploy_Rollback(service, toVersion?) to outline steps and risks. Only respond with the result, no fluff, be concise.", kernel: kernel);
+        var notifier = AgentUtils.Create(name: "Notifier", description: "Prepares concise incident updates for stakeholder communications.", instructions: "Post incident summary to comms. Use Comms_Post(channel, message) to share updates. Only respond with the result, no fluff, be concise.", kernel: kernel);
 
         ValueTask ResponseCallback(ChatMessageContent response)
         {

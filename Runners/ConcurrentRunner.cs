@@ -6,6 +6,7 @@ using Microsoft.SemanticKernel.Agents.Orchestration.Concurrent;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using MultiAgentSemanticKernel.Runtime;
+using MultiAgentSemanticKernel.Plugins;
 
 namespace MultiAgentSemanticKernel.Runners;
 
@@ -13,6 +14,8 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
 {
     public async Task RunAsync(string prompt)
     {
+        // Import only PR analysis tools for this runner
+        kernel.ImportPluginFromType<PrAnalysisPlugin>();
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = """
@@ -69,41 +72,29 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
             logger.LogWarning("[Concurrent] Starting with prompt: {Prompt}", prompt);
         }
 
-        var diffAnalyst = new ChatCompletionAgent
-        {
-            Name = "DiffAnalyst",
-            Instructions = "Summarize the PR diff size, risky files, and hot spots. Only respond with the result, no fluff, be concise.",
-            Description = "Scans changes to identify hotspots, risk areas, and potential churn.",
-            Kernel = kernel,
-            LoggerFactory = kernel.LoggerFactory,
-        };
+        var diffAnalyst = AgentUtils.Create(
+            name: "DiffAnalyst",
+            description: "Scans changes to identify hotspots, risk areas, and potential churn.",
+            instructions: "Summarize diff size, risky files, and hot spots. Use available tools: call Git_GetPRDiff(prText) to compute stats from the PR text or ID; if needed, pass the entire prompt as input. Only respond with the result, no fluff, be concise.",
+            kernel: kernel);
 
-        var testImpactor = new ChatCompletionAgent
-        {
-            Name = "TestImpactor",
-            Instructions = "Map changed files to impacted test suites and estimate runtime. Only respond with the result, no fluff, be concise.",
-            Description = "Estimates which test suites are affected by the diff and runtime impact.",
-            Kernel = kernel,
-            LoggerFactory = kernel.LoggerFactory,
-        };
+        var testImpactor = AgentUtils.Create(
+            name: "TestImpactor",
+            description: "Estimates which test suites are affected by the diff and runtime impact.",
+            instructions: "Map changed files to impacted test suites and estimate runtime. Use Git_GetPRDiff(prText) to obtain changed files, then CI_GetTestMap(filesJson) to get suites and runtime. Only respond with the result, no fluff, be concise.",
+            kernel: kernel);
 
-        var secLint = new ChatCompletionAgent
-        {
-            Name = "SecLint",
-            Instructions = "Run a lightweight lint/SAST mental pass; report any obvious issues. Only respond with the result, no fluff, be concise.",
-            Description = "Performs a quick security and linting pass to flag obvious issues.",
-            Kernel = kernel,
-            LoggerFactory = kernel.LoggerFactory,
-        };
+        var secLint = AgentUtils.Create(
+            name: "SecLint",
+            description: "Performs a quick security and linting pass to flag obvious issues.",
+            instructions: "Run a lightweight lint/SAST pass over the diff. Use Git_GetPRDiff(prText) to get a diff and then Lint_Run(diffJson) and Secret_Scan(diffJson). Summarize findings. Only respond with the result, no fluff, be concise.",
+            kernel: kernel);
 
-        var compliance = new ChatCompletionAgent
-        {
-            Name = "Compliance",
-            Instructions = "Check secrets and license headers hypothetically; report any concerns. Only respond with the result, no fluff, be concise.",
-            Description = "Checks for secret exposure and license/header compliance concerns.",
-            Kernel = kernel,
-            LoggerFactory = kernel.LoggerFactory,
-        };
+        var compliance = AgentUtils.Create(
+            name: "Compliance",
+            description: "Checks for secret exposure and license/header compliance concerns.",
+            instructions: "Check secrets and license headers. Use Git_GetPRDiff(prText) to get changed files and diff; run Secret_Scan(diffJson) and License_CheckHeaders(filesJson). Report any concerns. Only respond with the result, no fluff, be concise.",
+            kernel: kernel);
 
         ValueTask ResponseCallback(ChatMessageContent response)
         {

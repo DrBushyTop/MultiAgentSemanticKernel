@@ -6,6 +6,7 @@ using Microsoft.SemanticKernel.Agents.Orchestration.Handoff;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
 using Microsoft.SemanticKernel.ChatCompletion;
 using MultiAgentSemanticKernel.Runtime;
+using MultiAgentSemanticKernel.Plugins;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
@@ -15,6 +16,8 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
 {
     public async Task RunAsync(string prompt)
     {
+        // Import ops tools for incident management where applicable
+        kernel.ImportPluginFromType<OpsPlugin>();
 
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -50,6 +53,7 @@ Rules:
   • If a reproduction is required → hand off to ReproAgent.
   • If a deterministic repro already exists → hand off to FixPlanner.
 - Do not ask the end user questions; proceed autonomously.
+- When helpful, use Ops tools: Deploy_Status(service) to check current deploy state, Comms_Post(channel,message) to notify stakeholders.
 - Use the provided handoff tool to transfer to the chosen agent; do not terminate the conversation yourself.";
 
         const string reproInstructions =
@@ -70,11 +74,12 @@ Rules:
 - The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
 - When complete, call MiniIncidentPlugin.MarkDone(id) and reply EXACTLY:
   FINAL: plan=<Decision> action=<Action>
+- Where appropriate, call Deploy_Rollback(service,toVersion?) or FeatureFlags_Get(key) to support the plan.
 - Do not hand off after finalization.";
 
-        var triage = new ChatCompletionAgent { Name = "TriageAgent", Description = "Agent responsible for Triaging", Instructions = triageInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var repro = new ChatCompletionAgent { Name = "ReproAgent", Description = "Agent responsible for Reproducing Bugs" , Instructions = reproInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
-        var planner = new ChatCompletionAgent { Name = "FixPlanner", Description = "Agent Responsible for planning a Fix", Instructions = plannerInstructions, Kernel = kernel, LoggerFactory = kernel.LoggerFactory };
+        var triage = AgentUtils.Create(name: "TriageAgent", description: "Agent responsible for Triaging", instructions: triageInstructions, kernel: kernel);
+        var repro = AgentUtils.Create(name: "ReproAgent", description: "Agent responsible for Reproducing Bugs", instructions: reproInstructions, kernel: kernel);
+        var planner = AgentUtils.Create(name: "FixPlanner", description: "Agent Responsible for planning a Fix", instructions: plannerInstructions, kernel: kernel);
 
         // --- Logging callback with handoff/final markers ---
         ValueTask ResponseCallback(ChatMessageContent response)
