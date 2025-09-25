@@ -47,11 +47,17 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
 
         var ResponseCallback = AgentResponseCallbacks.Create(cli);
 
-        var manager = new RoundRobinGroupChatManager { MaximumInvocationCount = 5 };
+        var manager = new RoundRobinGroupChatManager
+        {
+            MaximumInvocationCount = 5,
+            // InteractiveCallback = SomeFunc(),
+        };
         var orchestration = new GroupChatOrchestration(manager, techLead, sre, security, dataEng)
         {
             LoggerFactory = kernel.LoggerFactory,
             ResponseCallback = ResponseCallback,
+            // InputTransform...
+            // ResultTransform...
         };
 
         var runtime = new InProcessRuntime();
