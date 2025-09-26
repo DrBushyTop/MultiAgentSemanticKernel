@@ -17,12 +17,9 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
         if (string.IsNullOrWhiteSpace(prompt))
         {
             prompt = "Proposed change: Move session state to Azure Cache for Redis Enterprise, SKU E3. Constraints: cost cap, rollout safety.";
-            logger.LogWarning("[GroupChat] Using default prompt: {Prompt}", prompt);
         }
-        else
-        {
-            logger.LogWarning("[GroupChat] Starting with prompt: {Prompt}", prompt);
-        }
+        logger.LogInformation("[Runner] GroupChat");
+        cli.UserInput(prompt);
 
         var techLead = AgentUtils.Create(
             name: "TechLead",

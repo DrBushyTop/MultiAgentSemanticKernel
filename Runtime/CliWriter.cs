@@ -6,6 +6,7 @@ public interface ICliWriter
 {
     void AgentStart(string agentName, string? detail = null);
     void AgentResult(string agentName, string result);
+    void UserInput(string input);
     void ToolStart(string agentName, string plugin, string function);
     void ToolEnd(string agentName, string plugin, string function, bool success);
     void Info(string message);
@@ -44,6 +45,20 @@ public sealed class AnsiCliWriter : ICliWriter
             Console.Write("\x1b[0m");
             Console.WriteLine();
             Console.WriteLine(result);
+            Console.WriteLine();
+        }
+    }
+
+    public void UserInput(string input)
+    {
+        lock (_lock)
+        {
+            Console.Write("\x1b[94m"); // bright blue
+            Console.Write("⌨️  ");
+            Console.Write("UserInput");
+            Console.Write("\x1b[0m");
+            Console.WriteLine();
+            Console.WriteLine(input);
             Console.WriteLine();
         }
     }

@@ -19,13 +19,10 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = "Story: 'As a user, I can upload avatars up to 2MB. Add 3 acceptance criteria.' Write specs and set up a new branch so I can get started.";
-            logger.LogWarning("[Sequential] Using default prompt: {Prompt}", defaultPrompt);
             prompt = defaultPrompt;
         }
-        else
-        {
-            logger.LogWarning("[Sequential] Starting with prompt: {Prompt}", prompt);
-        }
+        logger.LogInformation("[Runner] Sequential");
+        cli.UserInput(prompt);
 
         var nopluginKernel = kernel.Clone();
         nopluginKernel.Plugins.Clear();
@@ -33,7 +30,7 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
             name: "BacklogRefiner",
             description: "Transforms a raw requirement into a crisp user story with INVEST attributes and acceptance criteria.",
             instructions: "Rewrite as INVEST story and produce acceptance criteria. Keep acceptance criteria as JSON format. Be concise, no fluff",
-            kernel: nopluginKernel );
+            kernel: nopluginKernel);
         var scaffolder = AgentUtils.Create(
             name: "Scaffolder",
             description: "Suggests initial project structure, layers, and TODOs to get started.",

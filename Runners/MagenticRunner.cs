@@ -28,13 +28,10 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
                 Keep stakeholders updated with the actions taken and the results. Our team is working on version 1.33 to fix the issue,
                 so make sure that ultimately it's deployed, but roll back first if the update is not yet ready.
                 """;
-            logger.LogInformation("[Magentic] Using default prompt: {Prompt}", defaultPrompt);
             prompt = defaultPrompt;
         }
-        else
-        {
-            logger.LogInformation("[Magentic] Starting with prompt: {Prompt}", prompt);
-        }
+        logger.LogInformation("[Runner] Magentic");
+        cli.UserInput(prompt);
 
         var deployInspector = AgentUtils.Create(name: "DeployInspector",
             description: "Correlates recent deploys with regressions and notable changes.",

@@ -60,13 +60,10 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
             - Tests live under tests/ and follow *Tests.cs naming
             - Assume CI has 8 parallel workers available
             """;
-            logger.LogWarning("[Concurrent] Using default prompt: {Prompt}", defaultPrompt);
             prompt = defaultPrompt;
         }
-        else
-        {
-            logger.LogWarning("[Concurrent] Starting with prompt: {Prompt}", prompt);
-        }
+        logger.LogInformation("[Runner] Concurrent");
+        cli.UserInput(prompt);
 
         var diffAnalyst = AgentUtils.Create(
             name: "DiffAnalyst",
