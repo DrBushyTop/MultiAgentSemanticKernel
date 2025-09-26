@@ -9,7 +9,6 @@ public sealed class AzureOpenAIOptions
 public sealed class DeploymentOptions
 {
     public string Llm { get; set; } = string.Empty;
-    public string Embeddings { get; set; } = string.Empty;
 }
 
 

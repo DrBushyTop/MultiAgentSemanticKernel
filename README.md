@@ -27,8 +27,7 @@ Configuration uses the Options pattern bound from `appsettings.json` and environ
   "AzureOpenAI": {
     "Endpoint": "https://YOUR-AOAI-ENDPOINT.openai.azure.com/",
     "Deployments": {
-      "Llm": "your-llm-deployment",
-      "Embeddings": "your-embeddings-deployment"
+      "Llm": "your-llm-deployment"
     }
   },
   "EnableAgentLogging": false
@@ -38,7 +37,6 @@ Configuration uses the Options pattern bound from `appsettings.json` and environ
 - Environment overrides (prefix `MASKE_`):
   - `MASKE_AzureOpenAI__Endpoint`
   - `MASKE_AzureOpenAI__Deployments__Llm`
-  - `MASKE_AzureOpenAI__Deployments__Embeddings`
   - `MASKE_EnableAgentLogging` (bool; if true, agent/orchestration logging is wired into SK)
 
 The kernel is configured with Azure OpenAI chat completion using the provided endpoint and deployments. Credentials are sourced from `DefaultAzureCredential`.
