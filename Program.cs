@@ -19,7 +19,7 @@ builder.Configuration
     .AddEnvironmentVariables(prefix: "MASKE_");
 
 // Quiet console: only warnings and above via logger; demo output goes via CLI writer
-builder.Logging.ClearProviders();
+// builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(o =>
 {
     o.SingleLine = true;
@@ -37,11 +37,19 @@ builder.Services.AddSingleton(sp =>
 {
     var options = sp.GetRequiredService<IOptions<AzureOpenAIOptions>>().Value;
     var credential = sp.GetRequiredService<DefaultAzureCredential>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var enableAgentLogging = sp.GetRequiredService<IConfiguration>().GetValue<bool>("EnableAgentLogging");
 
     var kernelBuilder = Kernel.CreateBuilder();
 
     // Ensure the kernel's own service provider has the CLI writer for filters
     kernelBuilder.Services.AddSingleton<ICliWriter, AnsiCliWriter>();
+    if (enableAgentLogging)
+    {
+        // Use the host logger factory inside the kernel so agents/orchestrations can log
+        kernelBuilder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
+        kernelBuilder.Services.AddLogging();
+    }
 
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: options.Deployments.Llm,
@@ -54,7 +62,7 @@ builder.Services.AddSingleton(sp =>
     return kernelBuilder.Build();
 });
 
-builder.Services.AddSingleton<DemoPlugin>();
+// Plugins are imported per-runner, not globally
 
 builder.Services.AddSingleton<SequentialRunner>();
 builder.Services.AddSingleton<ConcurrentRunner>();
@@ -64,9 +72,8 @@ builder.Services.AddSingleton<MagenticRunner>();
 
 var host = builder.Build();
 
-// Post-build registrations
+// Post-build: Runners will import only the plugins they require
 var kernel = host.Services.GetRequiredService<Kernel>();
-kernel.ImportPluginFromType<DemoPlugin>();
 
 // Minimal CLI handling: first arg = mode, second (optional) = prompt
 var mode = args.Length > 0 ? args[0] : string.Empty;
@@ -79,7 +86,7 @@ if (string.IsNullOrWhiteSpace(mode))
 }
 
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Main");
-logger.LogInformation("Mode: {Mode}; Prompt: {Prompt}", mode, string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
+logger.LogDebug("Mode: {Mode}; Prompt: {Prompt}", mode, string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
 
 int exitCode = 0;
 try

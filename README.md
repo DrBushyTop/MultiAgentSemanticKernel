@@ -1,24 +1,24 @@
 # MultiAgentSemanticKernel
 
-A .NET 9 console demo app for Semantic Kernel multi-agent orchestration patterns. It scaffolds the base with DI, options, Azure OpenAI via DefaultAzureCredential, a console function-invocation filter, and stubs for orchestration modes. You will implement the actual orchestration later.
+A .NET 9 console demo app showcasing Semantic Kernel multi‑agent orchestration patterns end‑to‑end. It wires up DI, options, Azure OpenAI via `DefaultAzureCredential`, ANSI console output, and multiple orchestration styles (sequential, concurrent, group chat, handoff, magentic).
 
 ## Requirements
 
 - .NET SDK 9
-- Access to Azure OpenAI (for real runs)
-- Auth via DefaultAzureCredential (e.g., Azure CLI login, Managed Identity, or Visual Studio/VS Code sign-in)
+- Azure OpenAI access (for real runs)
+- Authentication via `DefaultAzureCredential` (e.g., Azure CLI login, Managed Identity, or Visual Studio/VS Code sign-in)
 
 ## Setup
 
 ```bash
-# Restore, build
+# Restore and build
 dotnet restore
 dotnet build
 ```
 
 ## Configuration
 
-Configuration uses the Options pattern bound from `appsettings.json` and environment variables.
+Configuration uses the Options pattern bound from `appsettings.json` and environment variables (prefix `MASKE_`).
 
 - File: `appsettings.json`
 
@@ -30,7 +30,8 @@ Configuration uses the Options pattern bound from `appsettings.json` and environ
       "Llm": "your-llm-deployment",
       "Embeddings": "your-embeddings-deployment"
     }
-  }
+  },
+  "EnableAgentLogging": false
 }
 ```
 
@@ -38,38 +39,53 @@ Configuration uses the Options pattern bound from `appsettings.json` and environ
   - `MASKE_AzureOpenAI__Endpoint`
   - `MASKE_AzureOpenAI__Deployments__Llm`
   - `MASKE_AzureOpenAI__Deployments__Embeddings`
+  - `MASKE_EnableAgentLogging` (bool; if true, agent/orchestration logging is wired into SK)
+
+The kernel is configured with Azure OpenAI chat completion using the provided endpoint and deployments. Credentials are sourced from `DefaultAzureCredential`.
 
 ## Running
 
-First argument is the mode. Remaining args are treated as the prompt (optional).
+First argument selects the runner mode. Remaining args are treated as the prompt. **If no prompt is supplied, each runner uses a sensible baked‑in default for demo purposes**.
 
 ```bash
+Usage:
+  dotnet run -- <Sequential|Concurrent|GroupChat|Handoff|Magentic> [prompt...]
+
 # Examples
-dotnet run -- Sequential "Say hello from the demo base setup"
-dotnet run -- Concurrent "Plan and summarize"
-dotnet run -- GroupChat "Discuss pros and cons"
-dotnet run -- Handoff "Break down tasks and delegate"
-dotnet run -- Magentic "Route this request"
+dotnet run -- Sequential "As a user, I can upload avatars up to 2MB."
+dotnet run -- Concurrent "Analyze PR: feat(auth): add input validation and fix null handling"
+dotnet run -- GroupChat "Move session state to Azure Cache for Redis Enterprise, SKU E3"
+dotnet run -- Handoff "Add dark mode feature toggle and roll it out safely"
+dotnet run -- Magentic "Stabilize error budget for service 'catalog'"
 ```
+
+## Runners
+
+- Sequential: Executes a deliberate pipeline of agents (BacklogRefiner, Scaffolder, APIDesigner, TestWriter, DocWriter) using Sequential Orchestration. Imports `DevWorkflowPlugin`.
+- Concurrent: Runs multiple analysis agents concurrently (DiffAnalyst, TestImpactor, SecLint, Compliance). Imports `PrAnalysisPlugin`.
+- GroupChat: Round‑robin group chat between TechLead, SRE, Security, and DataEng.
+- Handoff: Triage, Design, and Implementation agents using explicit handoff rules and an interactive callback.
+- Magentic: Ops‑focused flow (DeployInspector, Deployer, Notifier) using Magentic Manager with tools from `OpsPlugin`.
+
+## Console UX
+
+Console output is optimized for readability:
+
+- Agent lifecycle and tool calls are rendered with ANSI colors and icons.
+- User input is highlighted via a dedicated `UserInput` block for dark‑mode friendly contrast.
+- Results are printed compactly after orchestration completes.
 
 ## What’s implemented
 
-- DI with `Host.CreateApplicationBuilder`
-- Options model in `AzureOpenAIOptions`
+- DI via `Host.CreateApplicationBuilder`
+- Options model in `Options/AzureOpenAIOptions.cs`
 - Semantic Kernel 1.65.0 with Azure OpenAI chat completion
+- SK Agents packages (preview) for orchestration patterns
 - Authentication via `DefaultAzureCredential`
-- Console logging and a function invocation filter that prints which function runs and its result
-- Hardcoded demo plugin (`DemoPlugin`) with simple functions
-- Mode stubs: `Sequential`, `Concurrent`, `GroupChat`, `Handoff`, `Magentic`
+- Console logging, plus a function invocation filter (`ConsoleFunctionInvocationFilter`) to display tool invocations
+- Plugins: `DevWorkflowPlugin`, `PrAnalysisPlugin`, `OpsPlugin` (+ `OpsInspectorTools`, `OpsDeployerTools`, `OpsNotifierTools`)
 
 ## Notes
 
-- `SequentialRunner` currently invokes the model with the provided prompt. Others are stubs for you to fill in orchestration patterns.
-- If you don’t have valid Azure OpenAI config, calls will fail at runtime.
-
-## References
-
-- Function invocation filtering sample: [FunctionInvocationFiltering.cs](https://github.com/microsoft/semantic-kernel/blob/main/dotnet/samples/Concepts/Filtering/FunctionInvocationFiltering.cs)
-- Kernel filters design and DI: [docs/decisions/0033-kernel-filters.md](https://github.com/microsoft/semantic-kernel/blob/main/docs/decisions/0033-kernel-filters.md)
-- Migration: [Kernel events and filters migration](https://learn.microsoft.com/en-us/semantic-kernel/support/migration/kernel-events-and-filters-migration)
-- Filters overview: [Filters in Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/filters-in-semantic-kernel/)
+- If you don’t have valid Azure OpenAI configuration, calls will fail at runtime.
+- Some runners use longer timeouts (e.g., 120–300s) to await model output.
