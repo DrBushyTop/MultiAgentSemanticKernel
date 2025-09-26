@@ -21,7 +21,7 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
 
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            var defaultPrompt = "Ticket INC-1234: Customer checkout fails with NullReferenceException in Guid parsing.";
+            var defaultPrompt = "Ticket INC-1234: Product catalog item 325 fails to load.";
             logger.LogWarning("[Handoff] Using default prompt: {Prompt}", defaultPrompt);
             prompt = defaultPrompt;
         }
@@ -44,27 +44,21 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
 
         // --- Super-minimal agent contracts ---
         const string triageInstructions =
-            @"You are TriageAgent. Your job is to set initial severity and then transfer control using the orchestration handoff tool.
+            @"You are TriageAgent. Set the incident severity and hand off to the appropriate agents to repro, create a plan for a fix, and implement the fix.
 
 Rules:
 - Persist ONLY via MiniIncidentPlugin.SetSeverity(id, severity, signal?).
 - The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
-- After setting severity, decide:
-  • If a reproduction is required → hand off to ReproAgent.
-  • If a deterministic repro already exists → hand off to FixPlanner.
 - Do not ask the end user questions; proceed autonomously.
-- When helpful, use Ops tools: Deploy_Status(service) to check current deploy state, Comms_Post(channel,message) to notify stakeholders.
-- Use the provided handoff tool to transfer to the chosen agent; do not terminate the conversation yourself.";
+- End the task only when the incident has been fixed.";
 
         const string reproInstructions =
-            @"You are ReproAgent. Produce a deterministic reproduction for the incident.
+            @"You are ReproAgent. Produce a deterministic reproduction step list for the incident. Imagine you have access to the website and can reproduce the bug.
 
 Rules:
 - Persist via MiniIncidentPlugin.SetRepro(id, status, blocker?) where status is Confirmed or Blocked.
 - The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
-- If status is Confirmed → hand off to FixPlanner.
-- If status is Blocked → hand off to TriageAgent to resolve blockers (do not ask the end user).
-- Use the orchestration handoff tool to transfer; do not terminate.";
+- Do not end the task";
 
         const string plannerInstructions =
             @"You are FixPlanner. Propose a plan with Action(Hotfix|Rollback|FlagFlip|Investigate) and Decision(Go|NoGo).
@@ -72,14 +66,16 @@ Rules:
 Rules:
 - Persist via MiniIncidentPlugin.SetPlan(id, action, decision).
 - The incident id is provided as [incidentId: INC-####] in the last user message; pass that exact id to all calls.
-- When complete, call MiniIncidentPlugin.MarkDone(id) and reply EXACTLY:
-  FINAL: plan=<Decision> action=<Action>
-- Where appropriate, call Deploy_Rollback(service,toVersion?) or FeatureFlags_Get(key) to support the plan.
-- Do not hand off after finalization.";
+- Do not end the task";
+
+        const string fixerInstructions =
+            @"You are FixerAgent. Your job is to fix the incident based on the plan. Use the MiniIncidentPlugin.ImplementFix(id, fixDescription) to implement the fix.
+            - Do not end the task";
 
         var triage = AgentUtils.Create(name: "TriageAgent", description: "Agent responsible for Triaging", instructions: triageInstructions, kernel: kernel);
         var repro = AgentUtils.Create(name: "ReproAgent", description: "Agent responsible for Reproducing Bugs", instructions: reproInstructions, kernel: kernel);
-        var planner = AgentUtils.Create(name: "FixPlanner", description: "Agent Responsible for planning a Fix", instructions: plannerInstructions, kernel: kernel);
+        var planner = AgentUtils.Create(name: "FixPlanner", description: "Agent Responsible for planning a Fix based on the repro", instructions: plannerInstructions, kernel: kernel);
+        var fixer = AgentUtils.Create(name: "FixerAgent", description: "Agent responsible for Implementing Bug Fixes based on the plan", instructions: fixerInstructions, kernel: kernel);
 
         // --- Logging callback with handoff/final markers ---
         var ResponseCallback = AgentResponseCallbacks.Create(cli);
@@ -87,12 +83,12 @@ Rules:
         // --- Minimal handoff graph: 5 edges ---
         var handoffs = OrchestrationHandoffs
             .StartWith(triage)
-            .Add(triage, repro, planner)
-            .Add(planner, repro, "Transfer to this agent when plan needs confirmed repro")
-            .Add(repro, planner, "Transfer to this agent when repro confirmed")
-            .Add(repro, triage, "Transfer to this agent when repro blocked, need info");
+            .Add(triage, repro, planner, fixer)
+            .Add(repro, triage, "Transfer to this agent once you've reproduced the bug")
+            .Add(planner, triage, "Transfer to this agent once you've created a plan for a fix")
+            .Add(fixer, triage, "Transfer to this agent once you've implemented the fix");
 
-        var orchestration = new HandoffOrchestration(handoffs, triage, repro, planner)
+        var orchestration = new HandoffOrchestration(handoffs, triage, repro, planner, fixer)
         {
             LoggerFactory = kernel.LoggerFactory,
             ResponseCallback = ResponseCallback,
@@ -109,7 +105,7 @@ Rules:
         cli.Info("####### RESULT #######\n");
         cli.Info(output);
         cli.Info("# STATE");
-        cli.Info(state.Summarize(incidentId));
+        cli.Info(state.GetIncidentState(incidentId));
 
         await runtime.RunUntilIdleAsync();
     }
@@ -149,15 +145,21 @@ Rules:
         }
 
         [KernelFunction]
+        public void IpmlementFix(string id, string fixDescription)
+        {
+            Get(id).Fix = fixDescription;
+        }
+
+        [KernelFunction]
         public void MarkDone(string id)
         {
             Get(id).Done = true;
         }
 
-        public string Summarize(string id)
+        public string GetIncidentState(string id)
         {
             var s = Get(id);
-            return $"Severity={s.Severity}, Signal={s.Signal}, Repro={s.ReproStatus}{(string.IsNullOrWhiteSpace(s.Blocker) ? "" : $"(Blocker={s.Blocker})")}, Action={s.Action}, Decision={s.Decision}, Done={s.Done}";
+            return $"Severity={s.Severity}, Signal={s.Signal}, Repro={s.ReproStatus}{(string.IsNullOrWhiteSpace(s.Blocker) ? "" : $"(Blocker={s.Blocker})")}, Action={s.Action}, Decision={s.Decision}, Fix={s.Fix}, Done={s.Done}";
         }
 
         private S Get(string id) => _db.TryGetValue(id, out var s) ? s : (_db[id] = new S());
@@ -169,6 +171,7 @@ Rules:
             public string ReproStatus { get; set; } = "None";
             public string? Blocker { get; set; }
             public string Action { get; set; } = "";
+            public string Fix { get; set; } = "";
             public string Decision { get; set; } = "Pending";
             public bool Done { get; set; }
         }
