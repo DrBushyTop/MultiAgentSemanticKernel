@@ -71,9 +71,7 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
         var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-
-        cli.Info("####### RESULT #######\n");
-        cli.Info(output);
+        cli.RunnerResult(output);
 
         await runtime.RunUntilIdleAsync();
     }

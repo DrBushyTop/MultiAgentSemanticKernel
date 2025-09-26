@@ -101,7 +101,11 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         await runtime.StartAsync();
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
-        await result.GetValueAsync(TimeSpan.FromSeconds(120));
+        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
+        string rendered = output is IEnumerable<string> lines
+            ? string.Join(Environment.NewLine, lines)
+            : output?.ToString() ?? string.Empty;
+        cli.RunnerResult(rendered);
 
         await runtime.RunUntilIdleAsync();
     }

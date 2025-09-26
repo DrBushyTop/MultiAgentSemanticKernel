@@ -62,10 +62,7 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
         var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-
-        // Print compact state summary for the demo
-        cli.Info("####### RESULT #######\n");
-        cli.Info(output);
+        cli.RunnerResult(output);
 
         await runtime.RunUntilIdleAsync();
     }

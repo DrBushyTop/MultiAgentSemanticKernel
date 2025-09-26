@@ -65,10 +65,7 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
 
         var result = await orchestration.InvokeAsync(prompt, runtime);
         var output = await result.GetValueAsync(TimeSpan.FromSeconds(300));
-
-        // Print compact state summary for the demo
-        cli.Info("####### RESULT #######\n");
-        cli.Info(output);
+        cli.RunnerResult(output);
 
         await runtime.RunUntilIdleAsync();
     }

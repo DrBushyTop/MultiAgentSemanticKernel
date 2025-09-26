@@ -9,7 +9,7 @@ public interface ICliWriter
     void UserInput(string input);
     void ToolStart(string agentName, string plugin, string function);
     void ToolEnd(string agentName, string plugin, string function, bool success);
-    void Info(string message);
+    void RunnerResult(string result);
     void Warn(string message);
 }
 
@@ -42,6 +42,12 @@ public sealed class AnsiCliWriter : ICliWriter
             Console.Write("\x1b[32m"); // green
             Console.Write("💬 ");
             Console.Write(agentName);
+            Console.Write("\x1b[0m");
+            Console.Write(" ");
+            Console.Write("\x1b[2m"); // dim timestamp
+            Console.Write("[");
+            Console.Write(DateTime.Now.ToString("HH:mm:ss"));
+            Console.Write("]");
             Console.Write("\x1b[0m");
             Console.WriteLine();
             Console.WriteLine(result);
@@ -107,12 +113,16 @@ public sealed class AnsiCliWriter : ICliWriter
         }
     }
 
-    public void Info(string message)
+    public void RunnerResult(string result)
     {
         lock (_lock)
         {
-            Console.Write("\x1b[34mℹ\x1b[0m "); // blue info
-            Console.WriteLine(message);
+            Console.Write("\x1b[36m"); // cyan label
+            Console.Write("🏁 Runner Result");
+            Console.Write("\x1b[0m");
+            Console.WriteLine();
+            Console.WriteLine(result);
+            Console.WriteLine();
         }
     }
 

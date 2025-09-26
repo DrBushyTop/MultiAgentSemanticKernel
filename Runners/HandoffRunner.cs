@@ -75,7 +75,7 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
         cli.UserInput(task);
         var result = await orchestration.InvokeAsync(task, runtime);
         var text = await result.GetValueAsync(TimeSpan.FromSeconds(300));
-        cli.Info($"\n# RESULT: {text}");
+        cli.RunnerResult(text);
 
         await runtime.RunUntilIdleAsync();
     }
