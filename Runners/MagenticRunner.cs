@@ -25,8 +25,10 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
         {
             var defaultPrompt = """
                 Stabilize error budget for service 'catalog' given elevated p95 and 5xx. 
-                Keep stakeholders updated with the actions taken and the results. Our team is working on version 1.33 to fix the issue,
+                Our team is working on version 1.33 to fix the issue,
                 so make sure that ultimately it's deployed, but roll back first if the update is not yet ready.
+                Make sure stakeholders comms channel is updated with any actions taken and the final results.
+                Also return a summary of your internal task list.
                 """;
             prompt = defaultPrompt;
         }
