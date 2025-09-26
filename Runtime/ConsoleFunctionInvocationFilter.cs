@@ -29,15 +29,7 @@ public sealed class ConsoleFunctionInvocationFilter : IFunctionInvocationFilter
 
         await next(context);
 
-        try
-        {
-            _cli.ToolEnd(caller, pluginName ?? "", functionName, success: true);
-        }
-        catch
-        {
-            _cli.ToolEnd(caller, pluginName ?? "", functionName, success: false);
-        }
+        // TODO: You could also check the result of the function call and set success accordingly
+        // _cli.ToolEnd(caller, pluginName ?? "", functionName, success: true);
     }
-
-    // No value formatting needed; we no longer log params/results for tools
 }

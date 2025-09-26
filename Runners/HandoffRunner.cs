@@ -53,7 +53,7 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
             OrchestrationHandoffs
                 .StartWith(triageAgent)
                 .Add(triageAgent, designAgent, implementationAgent)
-                .Add(designAgent, triageAgent, "Transfer to this agent if the issue is not design related")
+                .Add(designAgent, triageAgent, "Transfer to this agent if the issue is not design related or relates to implementation")
                 .Add(implementationAgent, triageAgent, "Transfer to this agent if the issue is not implementation related"),
             triageAgent,
             designAgent,
