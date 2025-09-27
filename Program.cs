@@ -56,13 +56,10 @@ builder.Services.AddSingleton(sp =>
         endpoint: options.Endpoint,
         credentials: credential);
 
-    // Register filters via DI per SK guidance
     kernelBuilder.Services.AddSingleton<IFunctionInvocationFilter, ConsoleFunctionInvocationFilter>();
 
     return kernelBuilder.Build();
 });
-
-// Plugins are imported per-runner, not globally
 
 builder.Services.AddSingleton<SequentialRunner>();
 builder.Services.AddSingleton<ConcurrentRunner>();
@@ -72,10 +69,8 @@ builder.Services.AddSingleton<MagenticRunner>();
 
 var host = builder.Build();
 
-// Post-build: Runners will import only the plugins they require
 var kernel = host.Services.GetRequiredService<Kernel>();
 
-// Minimal CLI handling: first arg = mode, second (optional) = prompt
 var mode = args.Length > 0 ? args[0] : string.Empty;
 var prompt = args.Length > 1 ? string.Join(' ', args.Skip(1)) : string.Empty;
 

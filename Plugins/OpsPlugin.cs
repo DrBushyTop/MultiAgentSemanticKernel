@@ -76,7 +76,10 @@ public sealed class OpsPlugin
     [KernelFunction, Description("Deploy a specific version (use for rollback or upgrade)")]
     public string Deploy_Version([Description("service")] string service, [Description("version")] string version)
     {
-        Console.WriteLine($"Deploying version {version} for service {service}");
+        var prevColor = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Blue;
+        Console.WriteLine($"ℹ️  Deploying version {version} for service {service}");
+        Console.ForegroundColor = prevColor;
         var s = GetServiceOrDefault(service);
         lock (_lock)
         {
@@ -146,6 +149,13 @@ public sealed class OpsPlugin
             service = s.Service,
             versions = s.AvailableVersions.Select(v => new { version = v.Version, notes = v.Notes }).ToArray()
         };
+        var prevColor = Console.ForegroundColor;
+        foreach (var v in s.AvailableVersions)
+        {
+            Console.ForegroundColor = ConsoleColor.Blue;
+            Console.WriteLine($"ℹ️  Available version: {v.Version} - {v.Notes}");
+        }
+        Console.ForegroundColor = prevColor;
         return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
     }
 
