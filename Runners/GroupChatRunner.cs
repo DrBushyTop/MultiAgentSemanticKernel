@@ -22,16 +22,19 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
             description: "Balances scope, complexity, and delivery approach; proposes rollout strategy.",
             instructions: "Assess feasibility and complexity; propose deployment approach. Be concise.",
             kernel: kernel);
+
         var sre = AgentUtils.Create(
             name: "SRE",
             description: "Evaluates reliability, SLO/SLA impact, rollout safeguards, and ops risk.",
             instructions: "Evaluate reliability, error budget, rollout, and operational risk. Be concise.",
             kernel: kernel);
+
         var security = AgentUtils.Create(
             name: "Security",
             description: "Reviews threat model, secrets/egress handling, and key security risks.",
             instructions: "Assess threat model, secrets handling, egress. Be concise.",
             kernel: kernel);
+
         var dataEng = AgentUtils.Create(
             name: "DataEng",
             description: "Covers schema changes, migration plan, data quality and footprint.",

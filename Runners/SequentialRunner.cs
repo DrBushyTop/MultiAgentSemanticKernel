@@ -22,26 +22,31 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
         kernel.ImportPluginFromType<DevWorkflowPlugin>();
         var nopluginKernel = kernel.Clone();
         nopluginKernel.Plugins.Clear();
+
         var backlogRefiner = AgentUtils.Create(
             name: "BacklogRefiner",
             description: "Transforms a raw requirement into a crisp user story with INVEST attributes and acceptance criteria.",
             instructions: "Rewrite as INVEST story and produce acceptance criteria. Keep acceptance criteria as JSON format. Be concise, no fluff",
             kernel: nopluginKernel);
+
         var scaffolder = AgentUtils.Create(
             name: "Scaffolder",
             description: "Suggests initial project structure, layers, and TODOs to get started.",
             instructions: "Describe the service skeleton and TODOs. Create a working branch via tool Repo_CreateBranch(name) and Scaffold(branch). Do not overreach your responsibilities. Be concise, no fluff",
             kernel: kernel);
+
         var apiDesigner = AgentUtils.Create(
             name: "APIDesigner",
             description: "Outlines REST endpoints and request/response schemas at a high level.",
             instructions: "Propose endpoints and contracts briefly. Always generate OpenAPI using tool Oas_Generate(story, acceptanceJson); include the YAML. Do not overreach your responsibilities. Be concise, no fluff",
             kernel: kernel);
+
         var testWriter = AgentUtils.Create(
             name: "TestWriter",
             description: "Derives unit tests and contract tests using the acceptance criteria and API surface.",
             instructions: "Propose unit and contract tests from AC+OAS. Use tool Tests_Generate(openapiYaml, acceptanceJson) to generate files in repo. Do not overreach your responsibilities. Be concise, no fluff",
             kernel: kernel);
+
         var docWriter = AgentUtils.Create(
             name: "DocWriter",
             description: "Produces concise documentation: README and endpoint overview for quick onboarding.",
