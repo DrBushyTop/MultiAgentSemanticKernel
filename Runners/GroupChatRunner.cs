@@ -1,12 +1,8 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents;
-using Microsoft.SemanticKernel.Agents.Orchestration;
 using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
 using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using Microsoft.SemanticKernel.ChatCompletion;
 using MultiAgentSemanticKernel.Runtime;
-using MultiAgentSemanticKernel.Plugins;
 
 namespace MultiAgentSemanticKernel.Runners;
 
