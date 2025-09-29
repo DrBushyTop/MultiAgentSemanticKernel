@@ -51,12 +51,10 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
             instructions: "Draft README + endpoint docs summary. Always use tool Docs_Update(branch, summary) to open a PR when done. Do not overreach your responsibilities. Be concise, no fluff",
             kernel: kernel);
 
-        var responseCallback = AgentResponseCallbacks.Create(cli);
-
         var orchestration = new SequentialOrchestration(backlogRefiner, scaffolder, apiDesigner, testWriter, docWriter)
         {
             LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = responseCallback,
+            ResponseCallback = AgentResponseCallbacks.Create(cli),
         };
 
         var runtime = new InProcessRuntime();

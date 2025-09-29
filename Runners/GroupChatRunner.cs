@@ -42,8 +42,6 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
             instructions: "Cover schema, migration strategy, data implications. Be concise.",
             kernel: kernel);
 
-        var ResponseCallback = AgentResponseCallbacks.Create(cli);
-
         var manager = new RoundRobinGroupChatManager
         {
             MaximumInvocationCount = 5,
@@ -52,7 +50,7 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
         var orchestration = new GroupChatOrchestration(manager, techLead, sre, security, dataEng)
         {
             LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = ResponseCallback,
+            ResponseCallback = AgentResponseCallbacks.Create(cli),
             // InputTransform...
             // ResultTransform...
         };

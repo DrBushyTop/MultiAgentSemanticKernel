@@ -54,18 +54,17 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
             kernel: kernel,
             configureKernel: ak => ak.ImportPluginFromObject(new OpsNotifierTools(ops), nameof(OpsNotifierTools)));
 
-        var responseCallback = AgentResponseCallbacks.Create(cli);
-
         var manager = new StandardMagenticManager(
             kernel.GetRequiredService<IChatCompletionService>(),
             new OpenAIPromptExecutionSettings())
         {
             MaximumInvocationCount = 25
         };
+
         var orchestration = new MagenticOrchestration(manager, deployInspector, deployer, notifier)
         {
             LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = responseCallback,
+            ResponseCallback = AgentResponseCallbacks.Create(cli),
         };
 
         var runtime = new InProcessRuntime();
