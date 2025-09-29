@@ -57,22 +57,6 @@ public sealed class OpsPlugin
         return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    [KernelFunction, Description("Diff last deploy")]
-    public string Deploy_Diff([Description("prev")] string prev)
-    {
-        var s = GetServiceOrDefault(_defaultService ?? "");
-        var payload = new
-        {
-            previous = prev,
-            current = s.Version,
-            changes = new[]
-            {
-                new { component = s.Service, type = "code", detail = "rollback or hotfix applied" }
-            }
-        };
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
-    }
-
     [KernelFunction, Description("Deploy a specific version (use for rollback or upgrade)")]
     public string Deploy_Version([Description("service")] string service, [Description("version")] string version)
     {

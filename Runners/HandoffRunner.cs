@@ -49,6 +49,8 @@ public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, 
         responses.Enqueue("Create a branch and open a PR, then let's review the code");
         responses.Enqueue("Looks good, merge it");
 
+        // Optionally, you could use structured inputs and/or outputs here:
+        // HandoffOrchestration<MyInputType, MyOutputType> = new()...
         var orchestration = new HandoffOrchestration(
             OrchestrationHandoffs
                 .StartWith(triageAgent)

@@ -14,8 +14,6 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
 {
     public async Task RunAsync(string prompt)
     {
-        // Import only development workflow tools for this runner
-        kernel.ImportPluginFromType<DevWorkflowPlugin>();
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = "Story: 'As a user, I can upload avatars up to 2MB. Add 3 acceptance criteria.' Write specs and set up a new branch so I can get started.";
@@ -24,6 +22,7 @@ public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> lo
         logger.LogInformation("[Runner] Sequential");
         cli.UserInput(prompt);
 
+        kernel.ImportPluginFromType<DevWorkflowPlugin>();
         var nopluginKernel = kernel.Clone();
         nopluginKernel.Plugins.Clear();
         var backlogRefiner = AgentUtils.Create(

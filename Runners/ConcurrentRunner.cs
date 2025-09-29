@@ -14,8 +14,6 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
 {
     public async Task RunAsync(string prompt)
     {
-        // Import only PR analysis tools for this runner
-        kernel.ImportPluginFromType<PrAnalysisPlugin>();
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = """
@@ -64,6 +62,8 @@ public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> lo
         }
         logger.LogInformation("[Runner] Concurrent");
         cli.UserInput(prompt);
+
+        kernel.ImportPluginFromType<PrAnalysisPlugin>();
 
         var diffAnalyst = AgentUtils.Create(
             name: "DiffAnalyst",
