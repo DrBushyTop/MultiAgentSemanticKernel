@@ -13,12 +13,9 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
 {
     public async Task RunAsync(string prompt)
     {
-        // Import only ops tools for this runner
         var ops = new OpsPlugin();
         ops.SeedService("catalog", version: "1.32", p95Ms: 420, errorRate: 0.112, owners: new[] { "@team-catalog" });
-        var opsPlugin =
-            KernelPluginFactory.CreateFromObject(ops, pluginName: nameof(OpsPlugin), loggerFactory: kernel.LoggerFactory);
-        kernel.Plugins.Add(opsPlugin);
+
         if (string.IsNullOrWhiteSpace(prompt))
         {
             var defaultPrompt = """

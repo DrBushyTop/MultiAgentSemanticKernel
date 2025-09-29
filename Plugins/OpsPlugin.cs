@@ -118,11 +118,18 @@ public sealed class OpsPlugin
 
     [KernelFunction, Description("Post a message to comms")]
     public string Comms_Post([Description("channel")] string channel, [Description("message")] string message)
-        => "{\n" +
+    {
+        var prevColor = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Blue;
+        Console.WriteLine($"ℹ️  Message to channel {channel}: {message}");
+        Console.ForegroundColor = prevColor;
+        return "{\n" +
            "  \"channel\": \"" + channel + "\",\n" +
            "  \"message\": \"" + message.Replace("\"", "\\\"") + "\",\n" +
            "  \"link\": \"https://chat.example/msg/1\"\n" +
            "}";
+    }
+
 
     [KernelFunction, Description("List available versions with notes")]
     public string Versions_Available([Description("service")] string service)
