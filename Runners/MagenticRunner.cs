@@ -49,7 +49,7 @@ public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger
             kernel: kernel,
             configureKernel: ak => ak.ImportPluginFromObject(new OpsNotifierTools(ops), nameof(OpsNotifierTools)));
 
-        var manager = new StandardMagenticManager(
+        var manager = new LoggingStandardMagenticManager(
             kernel.GetRequiredService<IChatCompletionService>(),
             new OpenAIPromptExecutionSettings())
         {
