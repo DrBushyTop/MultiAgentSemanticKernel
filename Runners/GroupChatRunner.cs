@@ -41,7 +41,7 @@ public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logg
             instructions: "Cover schema, migration strategy, data implications. Be concise.",
             kernel: kernel);
 
-        var manager = new RoundRobinGroupChatManager
+        var manager = new LoggingRoundRobinGroupChatManager
         {
             MaximumInvocationCount = 5,
             // InteractiveCallback = SomeFunc(),
