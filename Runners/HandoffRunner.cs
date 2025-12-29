@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Runtime;
@@ -28,10 +27,11 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
         cli.Info($"Request: {prompt}");
 
         // Track clean conversation history (only text messages, no tool calls)
-        var conversationSummary = new List<(string Role, string Agent, string Text)>();
-        
-        // Initial message
-        conversationSummary.Add(("User", "User", prompt));
+        var conversationSummary = new List<(string Role, string Agent, string Text)>
+        {
+            // Initial message
+            ("User", "User", prompt)
+        };
         
         // Run multiple turns to simulate human-in-the-loop interaction
         const int maxTurns = 6;
@@ -144,7 +144,7 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
                     }
 
                     // Log function calls (but don't include in message history)
-                    if (e.Update.Contents.OfType<FunctionCallContent>().FirstOrDefault() is FunctionCallContent call)
+                    if (e.Update.Contents.OfType<FunctionCallContent>().FirstOrDefault() is { } call)
                     {
                         cli.ToolStart(e.ExecutorId, call.Name, 
                             call.Arguments?.ToDictionary(x => x.Key, x => x.Value?.ToString() ?? "") 
@@ -162,7 +162,7 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
                     return responses;
 
                 case ExecutorFailedEvent failed:
-                    if (failed.Data is Exception ex)
+                    if (failed.Data is { } ex)
                     {
                         cli.Warn($"Agent {failed.ExecutorId} failed: {ex.Message}");
                     }

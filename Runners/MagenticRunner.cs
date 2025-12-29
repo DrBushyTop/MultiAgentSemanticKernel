@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Agents.AI;
-using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Plugins;
 using MultiAgentSemanticKernel.Runtime;
@@ -24,10 +23,13 @@ public class MagenticRunner(IChatClient chatClient, ICliWriter cli)
         cli.Info($"Incident: {prompt}");
 
         // Initialize shared state with seed data
-        var opsState = new OpsState();
-        opsState.Services["catalog"] = new ServiceInfo("catalog", "1.32", 420, 0.112, ["@team-catalog"]);
-        opsState.Services["checkout"] = new ServiceInfo("checkout", "2.1", 180, 0.02, ["@team-checkout"]);
-        opsState.Services["inventory"] = new ServiceInfo("inventory", "1.15", 95, 0.01, ["@team-inventory"]);
+        var opsState = new OpsState
+        {
+            Services =
+            {
+                ["catalog"] = new ServiceInfo("catalog", "1.32", 420, 0.112, ["@team-catalog"]),
+            }
+        };
         opsState.AvailableVersions.Add(new VersionInfo("1.31", "previous stable"));
 
         // Create tool instances with shared state
@@ -117,7 +119,7 @@ public class MagenticRunner(IChatClient chatClient, ICliWriter cli)
             cli.AgentStart("Manager", "Manager");
             var managerResponse = await manager.RunAsync(history);
             
-            ManagerDecision? decision;
+            ManagerDecision decision;
             try
             {
                 decision = managerResponse.Deserialize<ManagerDecision>(JsonSerializerOptions.Web);
@@ -127,12 +129,6 @@ public class MagenticRunner(IChatClient chatClient, ICliWriter cli)
                 // If parsing fails, try to extract from text
                 var text = managerResponse.Messages.LastOrDefault()?.Text ?? "";
                 cli.Warn($"Could not parse manager decision, raw response: {text}");
-                continue;
-            }
-            
-            if (decision == null)
-            {
-                cli.Warn("Manager returned null decision");
                 continue;
             }
             

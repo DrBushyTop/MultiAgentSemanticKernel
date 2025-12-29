@@ -1,6 +1,6 @@
 namespace MultiAgentSemanticKernel.Options;
 
-public sealed class AzureOpenAIOptions
+public sealed class AzureOpenAiOptions
 {
     public string Endpoint { get; set; } = string.Empty;
     public DeploymentOptions Deployments { get; set; } = new();

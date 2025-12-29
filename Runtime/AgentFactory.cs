@@ -1,6 +1,5 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using OpenAI.Chat;
 
 namespace MultiAgentSemanticKernel.Runtime;
 

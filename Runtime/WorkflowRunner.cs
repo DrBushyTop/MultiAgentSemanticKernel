@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 
@@ -14,7 +13,7 @@ public static class WorkflowRunner
     {
         string? lastExecutorId = null;
 
-        StreamingRun run = await InProcessExecution.StreamAsync(workflow, messages);
+        StreamingRun run = await InProcessExecution.StreamAsync(workflow, messages, cancellationToken: cancellationToken);
         await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
 
         await foreach (WorkflowEvent evt in run.WatchStreamAsync().WithCancellation(cancellationToken))
@@ -34,7 +33,7 @@ public static class WorkflowRunner
                     }
 
                     // Log function calls
-                    if (e.Update.Contents.OfType<FunctionCallContent>().FirstOrDefault() is FunctionCallContent call)
+                    if (e.Update.Contents.OfType<FunctionCallContent>().FirstOrDefault() is { } call)
                     {
                         cli.ToolStart(e.ExecutorId, call.Name, 
                             call.Arguments?.ToDictionary(x => x.Key, x => x.Value?.ToString() ?? "") 
@@ -47,7 +46,7 @@ public static class WorkflowRunner
                     return output.As<List<ChatMessage>>() ?? [];
 
                 case ExecutorFailedEvent failed:
-                    if (failed.Data is Exception ex)
+                    if (failed.Data is { } ex)
                     {
                         cli.Warn($"Agent {failed.ExecutorId} failed: {ex.Message}");
                     }

@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json;
 
 namespace MultiAgentSemanticKernel.Plugins;
 
@@ -45,7 +44,8 @@ public class OpsInspectorTools(OpsState state)
         var deployments = state.Deployments
             .Where(d => d.Service == serviceName)
             .OrderByDescending(d => d.Timestamp)
-            .Take(5);
+            .Take(5)
+            .ToList();
         
         if (!deployments.Any())
         {
@@ -117,7 +117,7 @@ public class OpsDeployerTools(OpsState state)
             };
             
             // Make hotfix available after rollback
-            if (!state.AvailableVersions.Any(v => v.Version == "1.33"))
+            if (state.AvailableVersions.All(v => v.Version != "1.33"))
             {
                 state.AvailableVersions.Add(new VersionInfo("1.33", "hotfix: improves error rate"));
             }

@@ -1,4 +1,3 @@
-using System.ClientModel;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Microsoft.Extensions.AI;
@@ -9,7 +8,6 @@ using Microsoft.Extensions.Logging;
 using MultiAgentSemanticKernel.Options;
 using MultiAgentSemanticKernel.Runners;
 using MultiAgentSemanticKernel.Runtime;
-using OpenAI.Chat;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -19,17 +17,17 @@ builder.Configuration
     .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables("MASKE_");
 
-builder.Services.Configure<AzureOpenAIOptions>(
+builder.Services.Configure<AzureOpenAiOptions>(
     builder.Configuration.GetSection("AzureOpenAI"));
 
-var options = builder.Configuration.GetSection("AzureOpenAI").Get<AzureOpenAIOptions>()!;
+var options = builder.Configuration.GetSection("AzureOpenAI").Get<AzureOpenAiOptions>()!;
 
 // Create Azure OpenAI client
 var credential = new DefaultAzureCredential();
 var azureClient = new AzureOpenAIClient(new Uri(options.Endpoint), credential);
 
 // Register IChatClient for the LLM deployment
-builder.Services.AddSingleton<IChatClient>(sp =>
+builder.Services.AddSingleton<IChatClient>(_ =>
     azureClient.GetChatClient(options.Deployments.Llm).AsIChatClient());
 
 // Register CLI writer

@@ -9,7 +9,7 @@ namespace MultiAgentSemanticKernel.Plugins;
 public static class PrAnalysisTools
 {
     [Description("Get PR diff summary - returns statistics about changed files, risk areas, and hotspots")]
-    public static string GitGetPRDiff(string pr)
+    public static string GitGetPrDiff(string pr)
         => """
            {
              "summary": {
@@ -53,7 +53,7 @@ public static class PrAnalysisTools
            """;
 
     [Description("Map changed files to impacted test suites with estimated runtime")]
-    public static string CIGetTestMap(string files)
+    public static string CiGetTestMap(string files)
         => """
            {
              "suites": [

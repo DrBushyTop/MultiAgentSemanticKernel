@@ -1,4 +1,3 @@
-using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Plugins;
@@ -21,8 +20,8 @@ public class ConcurrentRunner(IChatClient chatClient, ICliWriter cli)
         // Create tools
         var tools = new List<AITool>
         {
-            AIFunctionFactory.Create(PrAnalysisTools.GitGetPRDiff),
-            AIFunctionFactory.Create(PrAnalysisTools.CIGetTestMap),
+            AIFunctionFactory.Create(PrAnalysisTools.GitGetPrDiff),
+            AIFunctionFactory.Create(PrAnalysisTools.CiGetTestMap),
             AIFunctionFactory.Create(PrAnalysisTools.LintRun),
             AIFunctionFactory.Create(PrAnalysisTools.SecretScan),
             AIFunctionFactory.Create(PrAnalysisTools.LicenseCheckHeaders)
@@ -80,7 +79,7 @@ public class ConcurrentRunner(IChatClient chatClient, ICliWriter cli)
         cli.Header("Combined PR Analysis Results");
         foreach (var message in result.Where(m => m.Role != ChatRole.User))
         {
-            cli.AgentResult(message.AuthorName ?? "Agent", message.Text ?? "");
+            cli.AgentResult(message.AuthorName ?? "Agent", message.Text);
         }
     }
 }
