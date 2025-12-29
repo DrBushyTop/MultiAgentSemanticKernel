@@ -5,6 +5,7 @@ public interface ICliWriter
     void Header(string text);
     void Info(string text);
     void AgentStart(string agentId, string agentName);
+    void AgentSelected(string managerName, string agentName);
     void AgentResult(string agentName, string result);
     void UserInput(string input);
     void ToolStart(string agentName, string toolName, Dictionary<string, string> args);
@@ -59,6 +60,24 @@ public sealed class AnsiCliWriter : ICliWriter
                 Console.Write("  ");
                 Console.Write($"({agentId})");
             }
+            Console.WriteLine();
+        }
+    }
+
+    public void AgentSelected(string managerName, string agentName)
+    {
+        lock (Lock)
+        {
+            Console.WriteLine();
+            Console.Write("\x1b[2m"); // dim
+            Console.Write("[");
+            Console.Write("\x1b[33m"); // yellow for manager
+            Console.Write(managerName);
+            Console.Write("\x1b[0m\x1b[2m"); // reset to dim
+            Console.Write("] selected → ");
+            Console.Write("\x1b[36m"); // cyan for agent
+            Console.Write(agentName);
+            Console.Write("\x1b[0m");
             Console.WriteLine();
         }
     }

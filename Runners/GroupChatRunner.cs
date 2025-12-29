@@ -1,6 +1,7 @@
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
+using MultiAgentSemanticKernel.Managers;
 using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Runners;
@@ -75,9 +76,9 @@ public class GroupChatRunner(IChatClient chatClient, ICliWriter cli)
             }
         });
 
-        // Build group chat with round-robin manager
+        // Build group chat with logging round-robin manager
         var workflow = AgentWorkflowBuilder
-            .CreateGroupChatBuilderWith(agents => new RoundRobinGroupChatManager(agents) 
+            .CreateGroupChatBuilderWith(agents => new LoggingRoundRobinGroupChatManager(agents, cli) 
             { 
                 MaximumIterationCount = 5 
             })
