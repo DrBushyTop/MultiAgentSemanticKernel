@@ -37,7 +37,7 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
         const int maxTurns = 6;
         for (int turn = 1; turn <= maxTurns; turn++)
         {
-            cli.Info($"\n--- Turn {turn} ---");
+            cli.TurnSeparator(turn);
             
             // Build messages from conversation summary (clean, no tool calls)
             var messages = BuildCleanMessages(conversationSummary);

@@ -10,6 +10,8 @@ public interface ICliWriter
     void ToolStart(string agentName, string toolName, Dictionary<string, string> args);
     void RunnerResult(string result);
     void Warn(string message);
+    void TurnSeparator(int turnNumber);
+    void IterationSeparator(int iterationNumber);
 }
 
 public sealed class AnsiCliWriter : ICliWriter
@@ -80,8 +82,9 @@ public sealed class AnsiCliWriter : ICliWriter
     {
         lock (Lock)
         {
-            Console.Write("\x1b[94m"); // bright blue
-            Console.Write("User: ");
+            Console.WriteLine();
+            Console.Write("\x1b[1;94m"); // bold bright blue
+            Console.Write("👤 User: ");
             Console.Write("\x1b[0m");
             Console.WriteLine(input);
             Console.WriteLine();
@@ -131,6 +134,36 @@ public sealed class AnsiCliWriter : ICliWriter
         {
             Console.Write("\x1b[33m⚠ \x1b[0m "); // yellow warning
             Console.WriteLine(message);
+        }
+    }
+
+    public void TurnSeparator(int turnNumber)
+    {
+        lock (Lock)
+        {
+            Console.WriteLine();
+            Console.Write("\x1b[2;36m"); // dim cyan
+            Console.Write("─── Turn ");
+            Console.Write(turnNumber);
+            Console.Write(" ");
+            Console.Write("─".PadRight(60, '─'));
+            Console.Write("\x1b[0m");
+            Console.WriteLine();
+        }
+    }
+
+    public void IterationSeparator(int iterationNumber)
+    {
+        lock (Lock)
+        {
+            Console.WriteLine();
+            Console.Write("\x1b[2;35m"); // dim magenta
+            Console.Write("─── Iteration ");
+            Console.Write(iterationNumber);
+            Console.Write(" ");
+            Console.Write("─".PadRight(56, '─'));
+            Console.Write("\x1b[0m");
+            Console.WriteLine();
         }
     }
 }

@@ -11,25 +11,30 @@ public static class WorkflowRunner
         ICliWriter cli,
         CancellationToken cancellationToken = default)
     {
-        string? lastExecutorId = null;
+        // Track accumulated content per executor
+        var executorContent = new Dictionary<string, System.Text.StringBuilder>();
+        var executorNames = new Dictionary<string, string>();
 
         StreamingRun run = await InProcessExecution.StreamAsync(workflow, messages, cancellationToken: cancellationToken);
         await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
 
-        await foreach (WorkflowEvent evt in run.WatchStreamAsync().WithCancellation(cancellationToken))
+        await foreach (WorkflowEvent evt in run.WatchStreamAsync(cancellationToken))
         {
             switch (evt)
             {
                 case AgentRunUpdateEvent e:
-                    if (e.ExecutorId != lastExecutorId)
+                    // Initialize tracking for this executor if first time seeing it
+                    if (!executorContent.ContainsKey(e.ExecutorId))
                     {
-                        lastExecutorId = e.ExecutorId;
+                        executorContent[e.ExecutorId] = new System.Text.StringBuilder();
+                        executorNames[e.ExecutorId] = e.Update.AuthorName ?? e.ExecutorId;
                         cli.AgentStart(e.ExecutorId, e.Update.AuthorName ?? e.ExecutorId);
                     }
 
+                    // Accumulate text for this executor
                     if (!string.IsNullOrEmpty(e.Update.Text))
                     {
-                        Console.Write(e.Update.Text);
+                        executorContent[e.ExecutorId].Append(e.Update.Text);
                     }
 
                     // Log function calls
@@ -41,11 +46,30 @@ public static class WorkflowRunner
                     }
                     break;
 
+                case ExecutorCompletedEvent completed:
+                    // Output accumulated text when executor completes
+                    if (executorContent.TryGetValue(completed.ExecutorId, out var content) && content.Length > 0)
+                    {
+                        var authorName = executorNames.TryGetValue(completed.ExecutorId, out var name) 
+                            ? name 
+                            : completed.ExecutorId;
+                        cli.AgentResult(authorName, content.ToString());
+                    }
+                    break;
+
                 case WorkflowOutputEvent output:
-                    Console.WriteLine();
                     return output.As<List<ChatMessage>>() ?? [];
 
                 case ExecutorFailedEvent failed:
+                    // Output accumulated text before showing failure
+                    if (executorContent.TryGetValue(failed.ExecutorId, out var failedContent) && failedContent.Length > 0)
+                    {
+                        var authorName = executorNames.TryGetValue(failed.ExecutorId, out var name) 
+                            ? name 
+                            : failed.ExecutorId;
+                        cli.AgentResult(authorName, failedContent.ToString());
+                    }
+                    
                     if (failed.Data is { } ex)
                     {
                         cli.Warn($"Agent {failed.ExecutorId} failed: {ex.Message}");

@@ -113,7 +113,7 @@ public class MagenticRunner(IChatClient chatClient, ICliWriter cli)
 
         for (int iteration = 1; iteration <= MaxIterations; iteration++)
         {
-            cli.Info($"\n--- Iteration {iteration} ---");
+            cli.IterationSeparator(iteration);
 
             // Manager evaluates and decides
             cli.AgentStart("Manager", "Manager");
