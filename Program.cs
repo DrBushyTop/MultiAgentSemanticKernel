@@ -39,6 +39,7 @@ builder.Services.AddTransient<ConcurrentRunner>();
 builder.Services.AddTransient<GroupChatRunner>();
 builder.Services.AddTransient<HandoffRunner>();
 builder.Services.AddTransient<MagenticRunner>();
+builder.Services.AddTransient<GraphRunner>();
 
 var app = builder.Build();
 
@@ -76,6 +77,9 @@ try
         case "magentic":
             await app.Services.GetRequiredService<MagenticRunner>().RunAsync(prompt);
             break;
+        case "graph":
+            await app.Services.GetRequiredService<GraphRunner>().RunAsync(prompt);
+            break;
         default:
             cli.Warn($"Unknown mode: {mode}");
             PrintUsage();
@@ -92,5 +96,5 @@ catch (Exception ex)
 
 static void PrintUsage()
 {
-    Console.WriteLine("Usage: dotnet run -- <Sequential|Concurrent|GroupChat|Handoff|Magentic> [prompt...]");
+    Console.WriteLine("Usage: dotnet run -- <Sequential|Concurrent|GroupChat|Handoff|Magentic|Graph> [prompt...]");
 }

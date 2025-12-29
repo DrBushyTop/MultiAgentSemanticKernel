@@ -50,6 +50,9 @@ dotnet run -- handoff "Fix the login bug"
 
 # Magentic (incident response)
 dotnet run -- magentic "High error rate on catalog service"
+
+# Graph (custom workflow with explicit nodes and edges)
+dotnet run -- graph "Review the authentication module changes"
 ```
 
 ## Orchestration Patterns
@@ -71,7 +74,89 @@ dotnet run -- magentic "High error rate on catalog service"
    - TriageAgent routes to DesignAgent or ImplementationAgent based on request
 
 5. **Magentic**: Manager-driven loop with planning and evaluation
+
    - Manager coordinates DeployInspector, Deployer, Notifier for incident response
+
+6. **Graph**: Custom workflow with explicitly defined nodes and edges
+   - ComplexityAnalyzer evaluates code and routes to appropriate reviewers
+   - Conditional branching: Simple changes → QuickReviewer
+   - Complex changes → DeepReviewer + SecuritySpecialist + PerformanceAnalyst (parallel)
+   - All paths converge to FinalSynthesizer for comprehensive report
+
+## Graph Workflow Deep Dive
+
+The **Graph** runner demonstrates how to build custom workflows by explicitly defining nodes (agents) and edges (connections) rather than using built-in patterns. This showcases the full flexibility of the workflow system.
+
+### Graph Structure
+
+```
+                    ┌─────────────────────┐
+                    │ ComplexityAnalyzer  │
+                    │   (Entry Point)     │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  Assess Complexity  │
+                    │   (Score 1-10)      │
+                    └──────────┬──────────┘
+                               │
+           ┌───────────────────┴────────────────────┐
+           │                                        │
+      Score < 6                                Score >= 6
+      (Simple)                                 (Complex)
+           │                                        │
+           ▼                                        ▼
+    ┌─────────────┐              ┌────────────────────────────────┐
+    │   Quick     │              │  Parallel Specialized Review   │
+    │  Reviewer   │              ├────────────────────────────────┤
+    └──────┬──────┘              │ • DeepReviewer                 │
+           │                     │ • SecuritySpecialist           │
+           │                     │ • PerformanceAnalyst           │
+           │                     └───────────┬────────────────────┘
+           │                                 │
+           │                                 │
+           └─────────────┬───────────────────┘
+                         │
+                         ▼
+                ┌─────────────────┐
+                │     Final       │
+                │  Synthesizer    │
+                │  (Exit Point)   │
+                └─────────────────┘
+```
+
+### Key Features
+
+- **Conditional Branching**: The ComplexityAnalyzer's output determines the path
+- **Parallel Execution**: Complex changes trigger 3 specialist reviewers simultaneously
+- **Convergence**: All paths merge at FinalSynthesizer regardless of route taken
+- **Explicit Edge Definitions**: Each connection is manually specified with optional conditions
+
+### Code Highlights
+
+```csharp
+// Conditional edge: route to QuickReviewer if simple
+builder.AddEdge<ComplexityAssessment>(
+    complexityAnalyzer,
+    quickReviewer,
+    condition: assessment => assessment?.IsComplex == false);
+
+// Multiple parallel edges for complex changes
+builder.AddEdge<ComplexityAssessment>(
+    complexityAnalyzer,
+    deepReviewer,
+    condition: assessment => assessment?.IsComplex == true);
+
+builder.AddEdge<ComplexityAssessment>(
+    complexityAnalyzer,
+    securitySpecialist,
+    condition: assessment => assessment?.IsComplex == true);
+
+// Convergence: all paths lead to final synthesizer
+builder.AddEdge(quickReviewer, finalSynthesizer);
+builder.AddEdge(deepReviewer, finalSynthesizer);
+builder.AddEdge(securitySpecialist, finalSynthesizer);
+```
 
 ## Architecture
 

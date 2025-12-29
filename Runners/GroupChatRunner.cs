@@ -83,6 +83,7 @@ public class GroupChatRunner(IChatClient chatClient, ICliWriter cli)
             })
             .AddParticipants(techLead, sre, security, dataEng)
             .Build();
+        
 
         // Execute workflow
         var messages = new List<ChatMessage> { new(ChatRole.User, prompt) };
