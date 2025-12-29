@@ -1,107 +1,86 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents.Orchestration.Concurrent;
-using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using MultiAgentSemanticKernel.Runtime;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Plugins;
+using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Runners;
 
-public sealed class ConcurrentRunner(Kernel kernel, ILogger<ConcurrentRunner> logger, ICliWriter cli)
+public class ConcurrentRunner(IChatClient chatClient, ICliWriter cli)
 {
     public async Task RunAsync(string prompt)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            var defaultPrompt = """
-            Analyze the following pull request. Provide a concise summary.
-
-            PR: feat(auth): add input validation and fix null handling
-
-            Description:
-            - Add basic server-side validation to signup flow
-            - Fix potential null reference in UserService
-            - Minor UI tweak in SignupForm and dep bump
-
-            Files changed (5):
-            1) src/Controllers/AuthController.cs (+23 −4)
-            2) src/Services/UserService.cs (+18 −6)
-            3) src/Models/SignupRequest.cs (+12 −0)
-            4) web/Frontend/components/SignupForm.tsx (+9 −2)
-            5) package.json (+1 −1)
-
-            Relevant diffs (snippets):
-            --- a/src/Services/UserService.cs
-            +++ b/src/Services/UserService.cs
-            @@ -42,7 +42,13 @@
-            - var user = await _repo.FindByEmailAsync(request.Email);
-            - if (user.IsActive) { /* ... */ }
-            + var user = await _repo.FindByEmailAsync(request.Email);
-            + if (user == null)
-            + {
-            +     _logger.LogWarning("Signup requested for unknown email {Email}", request.Email);
-            +     throw new NotFoundException("User not found");
-            + }
-            + if (user.IsActive) { /* ... */ }
-
-            --- a/src/Controllers/AuthController.cs
-            +++ b/src/Controllers/AuthController.cs
-            @@ -88,3 +102,12 @@
-            - return Ok(await _service.Signup(request));
-            + if (!ModelState.IsValid) return BadRequest(ModelState);
-            + return Ok(await _service.Signup(request));
-
-            Constraints:
-            - Tests live under tests/ and follow *Tests.cs naming
-            - Assume CI has 8 parallel workers available
-            """;
-            prompt = defaultPrompt;
+            prompt = "Analyze PR #123 for the authentication refactoring changes";
         }
-        logger.LogInformation("[Runner] Concurrent");
-        cli.UserInput(prompt);
 
-        kernel.ImportPluginFromType<PrAnalysisPlugin>();
+        cli.Header("Concurrent Pipeline: PR Analysis");
+        cli.Info($"Prompt: {prompt}");
 
-        var diffAnalyst = AgentUtils.Create(
-            name: "DiffAnalyst",
-            description: "Scans changes to identify hotspots, risk areas, and potential churn.",
-            instructions: "Summarize diff size, risky files, and hot spots. Use available tools: call Git_GetPRDiff(prText) to compute stats from the PR text or ID; if needed, pass the entire prompt as input. Only respond with the result, no fluff, be concise.",
-            kernel: kernel);
-
-        var testImpactor = AgentUtils.Create(
-            name: "TestImpactor",
-            description: "Estimates which test suites are affected by the diff and runtime impact.",
-            instructions: "Map changed files to impacted test suites and estimate runtime. Use Git_GetPRDiff(prText) to obtain changed files, then CI_GetTestMap(filesJson) to get suites and runtime. Only respond with the result, no fluff, be concise.",
-            kernel: kernel);
-
-        var secLint = AgentUtils.Create(
-            name: "SecLint",
-            description: "Performs a quick security and linting pass to flag obvious issues.",
-            instructions: "Run a lightweight lint/SAST pass over the diff. Use Git_GetPRDiff(prText) to get a diff and then Lint_Run(diffJson) and Secret_Scan(diffJson). Summarize findings. Only respond with the result, no fluff, be concise.",
-            kernel: kernel);
-
-        var compliance = AgentUtils.Create(
-            name: "Compliance",
-            description: "Checks for secret exposure and license/header compliance concerns.",
-            instructions: "Check secrets and license headers. Use Git_GetPRDiff(prText) to get changed files and diff; run Secret_Scan(diffJson) and License_CheckHeaders(filesJson). Report any concerns. Only respond with the result, no fluff, be concise.",
-            kernel: kernel);
-
-        var orchestration = new ConcurrentOrchestration(diffAnalyst, testImpactor, secLint, compliance)
+        // Create tools
+        var tools = new List<AITool>
         {
-            LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = AgentResponseCallbacks.Create(cli),
+            AIFunctionFactory.Create(PrAnalysisTools.GitGetPRDiff),
+            AIFunctionFactory.Create(PrAnalysisTools.CIGetTestMap),
+            AIFunctionFactory.Create(PrAnalysisTools.LintRun),
+            AIFunctionFactory.Create(PrAnalysisTools.SecretScan),
+            AIFunctionFactory.Create(PrAnalysisTools.LicenseCheckHeaders)
         };
 
-        var runtime = new InProcessRuntime();
-        await runtime.StartAsync();
+        // Create parallel analysis agents
+        var diffAnalyst = AgentFactory.CreateAgent(
+            chatClient,
+            name: "DiffAnalyst",
+            instructions: """
+                You analyze code diffs for changes, complexity hotspots, and risk areas.
+                Use the GitGetPRDiff tool to get diff information.
+                Provide a summary of changes and potential risks.
+                """,
+            tools);
 
-        var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-        string rendered = output is IEnumerable<string> lines
-            ? string.Join(Environment.NewLine, lines)
-            : output?.ToString() ?? string.Empty;
-        cli.RunnerResult(rendered);
+        var testImpactor = AgentFactory.CreateAgent(
+            chatClient,
+            name: "TestImpactor",
+            instructions: """
+                You identify which test suites are affected by code changes.
+                Use the CIGetTestMap tool to determine affected tests.
+                Recommend which tests should be run.
+                """,
+            tools);
 
-        await runtime.RunUntilIdleAsync();
+        var secLint = AgentFactory.CreateAgent(
+            chatClient,
+            name: "SecLint",
+            instructions: """
+                You perform security analysis and linting checks.
+                Use the LintRun tool to check for code quality issues.
+                Report any security concerns or code quality issues.
+                """,
+            tools);
+
+        var compliance = AgentFactory.CreateAgent(
+            chatClient,
+            name: "Compliance",
+            instructions: """
+                You check for secret exposure and license compliance.
+                Use the SecretScan and LicenseCheckHeaders tools to verify compliance.
+                Report any compliance issues found.
+                """,
+            tools);
+
+        // Build concurrent workflow - all agents run in parallel
+        var workflow = AgentWorkflowBuilder.BuildConcurrent([diffAnalyst, testImpactor, secLint, compliance]);
+
+        // Execute workflow
+        var messages = new List<ChatMessage> { new(ChatRole.User, prompt) };
+        var result = await WorkflowRunner.ExecuteAsync(workflow, messages, cli);
+
+        // Display combined results
+        cli.Header("Combined PR Analysis Results");
+        foreach (var message in result.Where(m => m.Role != ChatRole.User))
+        {
+            cli.AgentResult(message.AuthorName ?? "Agent", message.Text ?? "");
+        }
     }
 }

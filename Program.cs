@@ -1,78 +1,55 @@
-﻿using Azure.Identity;
-using System.Linq;
+using System.ClientModel;
+using Azure.AI.OpenAI;
+using Azure.Identity;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Microsoft.SemanticKernel;
 using MultiAgentSemanticKernel.Options;
-using MultiAgentSemanticKernel.Plugins;
 using MultiAgentSemanticKernel.Runners;
 using MultiAgentSemanticKernel.Runtime;
+using OpenAI.Chat;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// Load configuration
 builder.Configuration
-    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-    .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables(prefix: "MASKE_");
+    .AddJsonFile("appsettings.json", optional: false)
+    .AddJsonFile("appsettings.Development.json", optional: true)
+    .AddEnvironmentVariables("MASKE_");
 
-// Quiet console: only warnings and above via logger; demo output goes via CLI writer
-// builder.Logging.ClearProviders();
-builder.Logging.AddSimpleConsole(o =>
-{
-    o.SingleLine = true;
-    o.TimestampFormat = "HH:mm:ss ";
-    o.IncludeScopes = false;
-});
-builder.Logging.SetMinimumLevel(LogLevel.Warning);
+builder.Services.Configure<AzureOpenAIOptions>(
+    builder.Configuration.GetSection("AzureOpenAI"));
 
-builder.Services.Configure<AzureOpenAIOptions>(builder.Configuration.GetSection("AzureOpenAI"));
+var options = builder.Configuration.GetSection("AzureOpenAI").Get<AzureOpenAIOptions>()!;
 
-builder.Services.AddSingleton<DefaultAzureCredential>(_ => new DefaultAzureCredential());
+// Create Azure OpenAI client
+var credential = new DefaultAzureCredential();
+var azureClient = new AzureOpenAIClient(new Uri(options.Endpoint), credential);
+
+// Register IChatClient for the LLM deployment
+builder.Services.AddSingleton<IChatClient>(sp =>
+    azureClient.GetChatClient(options.Deployments.Llm).AsIChatClient());
+
+// Register CLI writer
 builder.Services.AddSingleton<ICliWriter, AnsiCliWriter>();
 
-builder.Services.AddSingleton(sp =>
-{
-    var options = sp.GetRequiredService<IOptions<AzureOpenAIOptions>>().Value;
-    var credential = sp.GetRequiredService<DefaultAzureCredential>();
-    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    var enableAgentLogging = sp.GetRequiredService<IConfiguration>().GetValue<bool>("EnableAgentLogging");
+// Register runners
+builder.Services.AddTransient<SequentialRunner>();
+builder.Services.AddTransient<ConcurrentRunner>();
+builder.Services.AddTransient<GroupChatRunner>();
+builder.Services.AddTransient<HandoffRunner>();
+builder.Services.AddTransient<MagenticRunner>();
 
-    var kernelBuilder = Kernel.CreateBuilder();
+var app = builder.Build();
 
-    // Ensure the kernel's own service provider has the CLI writer for filters
-    kernelBuilder.Services.AddSingleton<ICliWriter, AnsiCliWriter>();
-    if (enableAgentLogging)
-    {
-        // Use the host logger factory inside the kernel so agents/orchestrations can log
-        kernelBuilder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
-        kernelBuilder.Services.AddLogging();
-    }
+// Parse command line
+var mode = args.Length > 0 ? args[0] : "";
+var prompt = args.Length > 1 ? string.Join(" ", args.Skip(1)) : "";
 
-    kernelBuilder.AddAzureOpenAIChatCompletion(
-        deploymentName: options.Deployments.Llm,
-        endpoint: options.Endpoint,
-        credentials: credential);
-
-    kernelBuilder.Services.AddSingleton<IFunctionInvocationFilter, ConsoleFunctionInvocationFilter>();
-
-    return kernelBuilder.Build();
-});
-
-builder.Services.AddSingleton<SequentialRunner>();
-builder.Services.AddSingleton<ConcurrentRunner>();
-builder.Services.AddSingleton<GroupChatRunner>();
-builder.Services.AddSingleton<HandoffRunner>();
-builder.Services.AddSingleton<MagenticRunner>();
-
-var host = builder.Build();
-
-var kernel = host.Services.GetRequiredService<Kernel>();
-
-var mode = args.Length > 0 ? args[0] : string.Empty;
-var prompt = args.Length > 1 ? string.Join(' ', args.Skip(1)) : string.Empty;
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+var cli = app.Services.GetRequiredService<ICliWriter>();
 
 if (string.IsNullOrWhiteSpace(mode))
 {
@@ -80,43 +57,40 @@ if (string.IsNullOrWhiteSpace(mode))
     return;
 }
 
-var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Main");
-logger.LogDebug("Mode: {Mode}; Prompt: {Prompt}", mode, string.IsNullOrWhiteSpace(prompt) ? "<none>" : prompt);
-
-int exitCode = 0;
 try
 {
+    cli.Header($"Running {mode} orchestration");
+    
     switch (mode.ToLowerInvariant())
     {
         case "sequential":
-            await host.Services.GetRequiredService<SequentialRunner>().RunAsync(prompt);
+            await app.Services.GetRequiredService<SequentialRunner>().RunAsync(prompt);
             break;
         case "concurrent":
-            await host.Services.GetRequiredService<ConcurrentRunner>().RunAsync(prompt);
+            await app.Services.GetRequiredService<ConcurrentRunner>().RunAsync(prompt);
             break;
         case "groupchat":
-            await host.Services.GetRequiredService<GroupChatRunner>().RunAsync(prompt);
+            await app.Services.GetRequiredService<GroupChatRunner>().RunAsync(prompt);
             break;
         case "handoff":
-            await host.Services.GetRequiredService<HandoffRunner>().RunAsync(prompt);
+            await app.Services.GetRequiredService<HandoffRunner>().RunAsync(prompt);
             break;
         case "magentic":
-            await host.Services.GetRequiredService<MagenticRunner>().RunAsync(prompt);
+            await app.Services.GetRequiredService<MagenticRunner>().RunAsync(prompt);
             break;
         default:
+            cli.Warn($"Unknown mode: {mode}");
             PrintUsage();
-            exitCode = 1;
+            Environment.ExitCode = 1;
             break;
     }
 }
 catch (Exception ex)
 {
-    logger.LogError(ex, "Unhandled exception while running mode {Mode}", mode);
-    exitCode = 2;
+    logger.LogError(ex, "Error running {Mode}", mode);
+    cli.Warn($"Error: {ex.Message}");
+    Environment.ExitCode = 1;
 }
-
-Environment.ExitCode = exitCode;
-return;
 
 static void PrintUsage()
 {

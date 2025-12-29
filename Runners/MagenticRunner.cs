@@ -1,74 +1,200 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents.Magentic;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
-using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using Microsoft.SemanticKernel.ChatCompletion;
-using MultiAgentSemanticKernel.Runtime;
+using System.ComponentModel;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Plugins;
+using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Runners;
 
-public sealed class MagenticRunner(Kernel kernel, ILogger<MagenticRunner> logger, ICliWriter cli)
+public class MagenticRunner(IChatClient chatClient, ICliWriter cli)
 {
+    private const int MaxIterations = 10;
+
     public async Task RunAsync(string prompt)
     {
-        var ops = new OpsPlugin();
-        ops.SeedService("catalog", version: "1.32", p95Ms: 420, errorRate: 0.112, owners: new[] { "@team-catalog" });
-
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            var defaultPrompt = """
-                Stabilize error budget for service 'catalog' given elevated p95 and 5xx. 
-                Our team is working on version 1.33 to fix the issue,
-                so make sure that ultimately it's deployed, but roll back first if the update is not yet ready.
-                Make sure stakeholders comms channel is updated with any actions taken and the final results.
-                Also return a summary of your internal task list in a checklist format.
-                """;
-            prompt = defaultPrompt;
+            prompt = "The catalog service is showing elevated error rates. Investigate and resolve.";
         }
-        logger.LogInformation("[Runner] Magentic");
-        cli.UserInput(prompt);
 
-        var deployInspector = AgentUtils.Create(name: "DeployInspector",
-            description: "Correlates recent deploys with regressions and notable changes.",
-            instructions:
-            "Compare last deploys to spot regressions. Use Deploy_Status(service) and Deploy_Diff(prevVersion) to summarize. You can check available versions via Versions_Available(service). It updates frequently. Do not call any other tools.",
-            kernel: kernel,
-            configureKernel: ak => ak.ImportPluginFromObject(new OpsInspectorTools(ops), nameof(OpsInspectorTools)));
-        var deployer = AgentUtils.Create(name: "Deployer",
-            description: "Deploys versions of the application. Checks for new versions.",
-            instructions:
-            "Roll back to previous stable using Deploy_Version if needed. Check available versions via Versions_Available(service) every time you want to check for new versions. If a hotfix is available, deploy it using Deploy_Version(service, '<latest>'). Do not notify comms via tools.",
-            kernel: kernel,
-            configureKernel: ak => ak.ImportPluginFromObject(new OpsDeployerTools(ops), nameof(OpsDeployerTools)));
-        var notifier = AgentUtils.Create(name: "Notifier",
-            description: "Prepares concise incident updates for stakeholder communications.",
-            instructions:
-            "Post incident summary to comms. Use Comms_Post(channel, message) to share updates after each major step (rollback, upgrade, verification). Do nothing else other than notify.",
-            kernel: kernel,
-            configureKernel: ak => ak.ImportPluginFromObject(new OpsNotifierTools(ops), nameof(OpsNotifierTools)));
+        cli.Header("Magentic: Ops Incident Response");
+        cli.Info($"Incident: {prompt}");
 
-        var manager = new LoggingStandardMagenticManager(
-            kernel.GetRequiredService<IChatCompletionService>(),
-            new OpenAIPromptExecutionSettings())
+        // Initialize shared state with seed data
+        var opsState = new OpsState();
+        opsState.Services["catalog"] = new ServiceInfo("catalog", "1.32", 420, 0.112, ["@team-catalog"]);
+        opsState.Services["checkout"] = new ServiceInfo("checkout", "2.1", 180, 0.02, ["@team-checkout"]);
+        opsState.Services["inventory"] = new ServiceInfo("inventory", "1.15", 95, 0.01, ["@team-inventory"]);
+        opsState.AvailableVersions.Add(new VersionInfo("1.31", "previous stable"));
+
+        // Create tool instances with shared state
+        var inspectorTools = new OpsInspectorTools(opsState);
+        var deployerTools = new OpsDeployerTools(opsState);
+        var notifierTools = new OpsNotifierTools(opsState);
+
+        // Create specialist agents
+        var inspector = AgentFactory.CreateAgent(
+            chatClient,
+            name: "DeployInspector",
+            instructions: """
+                You investigate service issues by checking status and recent deployments.
+                Look for correlations between deployments and problems.
+                Report your findings clearly.
+                """,
+            [
+                AIFunctionFactory.Create(inspectorTools.GetServiceStatus),
+                AIFunctionFactory.Create(inspectorTools.GetRecentDeployments),
+                AIFunctionFactory.Create(inspectorTools.GetAvailableVersions)
+            ]);
+
+        var deployer = AgentFactory.CreateAgent(
+            chatClient,
+            name: "Deployer",
+            instructions: """
+                You handle deployments and rollbacks.
+                Only deploy or rollback when instructed by the manager.
+                Confirm actions taken.
+                """,
+            [
+                AIFunctionFactory.Create(deployerTools.DeployService),
+                AIFunctionFactory.Create(deployerTools.RollbackService)
+            ]);
+
+        var notifier = AgentFactory.CreateAgent(
+            chatClient,
+            name: "Notifier",
+            instructions: """
+                You handle communications during incidents.
+                Send notifications and page on-call when needed.
+                Keep stakeholders informed.
+                """,
+            [
+                AIFunctionFactory.Create(notifierTools.SendNotification),
+                AIFunctionFactory.Create(notifierTools.PageOnCall)
+            ]);
+
+        // Create manager agent with structured output for decisions
+        var manager = new ChatClientAgent(chatClient, new ChatClientAgentOptions
         {
-            MaximumInvocationCount = 25
+            Name = "Manager",
+            ChatOptions = new ChatOptions
+            {
+                Instructions = """
+                    You are an incident manager coordinating a team of specialists:
+                    - DeployInspector: Investigates service status and deployments
+                    - Deployer: Handles deployments and rollbacks
+                    - Notifier: Sends notifications and pages on-call
+                    
+                    Analyze the situation and decide:
+                    1. Is the incident resolved?
+                    2. Which agent should act next?
+                    3. What specific instruction should they follow?
+                    
+                    Be methodical: investigate first, then act, then communicate.
+                    """,
+                Temperature = 0f,
+                ResponseFormat = ChatResponseFormat.ForJsonSchema<ManagerDecision>()
+            }
+        });
+
+        // Run the magentic loop
+        var history = new List<ChatMessage> { new(ChatRole.User, prompt) };
+        var agents = new Dictionary<string, AIAgent>
+        {
+            ["DeployInspector"] = inspector,
+            ["Deployer"] = deployer,
+            ["Notifier"] = notifier
         };
 
-        var orchestration = new MagenticOrchestration(manager, deployInspector, deployer, notifier)
+        for (int iteration = 1; iteration <= MaxIterations; iteration++)
         {
-            LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = AgentResponseCallbacks.Create(cli),
-        };
+            cli.Info($"\n--- Iteration {iteration} ---");
 
-        var runtime = new InProcessRuntime();
-        await runtime.StartAsync();
+            // Manager evaluates and decides
+            cli.AgentStart("Manager", "Manager");
+            var managerResponse = await manager.RunAsync(history);
+            
+            ManagerDecision? decision;
+            try
+            {
+                decision = managerResponse.Deserialize<ManagerDecision>(JsonSerializerOptions.Web);
+            }
+            catch
+            {
+                // If parsing fails, try to extract from text
+                var text = managerResponse.Messages.LastOrDefault()?.Text ?? "";
+                cli.Warn($"Could not parse manager decision, raw response: {text}");
+                continue;
+            }
+            
+            if (decision == null)
+            {
+                cli.Warn("Manager returned null decision");
+                continue;
+            }
+            
+            Console.WriteLine($"Resolved: {decision.IsResolved}");
+            Console.WriteLine($"Next Agent: {decision.NextAgent}");
+            Console.WriteLine($"Instruction: {decision.Instruction}");
+            Console.WriteLine($"Reasoning: {decision.Reasoning}");
 
-        var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-        cli.RunnerResult(output);
+            history.Add(new ChatMessage(ChatRole.Assistant, JsonSerializer.Serialize(decision)));
 
-        await runtime.RunUntilIdleAsync();
+            if (decision.IsResolved)
+            {
+                cli.Header("Incident Resolved");
+                cli.RunnerResult(decision.Reasoning);
+                break;
+            }
+
+            // Execute the chosen agent
+            if (agents.TryGetValue(decision.NextAgent, out var agent))
+            {
+                cli.AgentStart(decision.NextAgent, decision.NextAgent);
+                
+                var agentMessages = new List<ChatMessage>(history)
+                {
+                    new(ChatRole.User, decision.Instruction)
+                };
+
+                var agentResponse = await agent.RunAsync(agentMessages);
+                var responseText = agentResponse.Messages.LastOrDefault()?.Text ?? "";
+                
+                Console.WriteLine(responseText);
+                history.Add(new ChatMessage(ChatRole.Assistant, $"[{decision.NextAgent}]: {responseText}"));
+            }
+            else
+            {
+                cli.Warn($"Unknown agent: {decision.NextAgent}");
+            }
+        }
+
+        // Show final state
+        cli.Header("Final State");
+        cli.Info($"Notifications sent: {opsState.Notifications.Count}");
+        cli.Info($"Deployments: {opsState.Deployments.Count}");
     }
+}
+
+[Description("Manager's decision for the next action")]
+internal sealed class ManagerDecision
+{
+    [JsonPropertyName("is_resolved")]
+    [Description("Whether the incident is fully resolved")]
+    public bool IsResolved { get; set; }
+
+    [JsonPropertyName("next_agent")]
+    [Description("Which agent should act next: DeployInspector, Deployer, or Notifier")]
+    public string NextAgent { get; set; } = "";
+
+    [JsonPropertyName("instruction")]
+    [Description("Specific instruction for the next agent")]
+    public string Instruction { get; set; } = "";
+
+    [JsonPropertyName("reasoning")]
+    [Description("Explanation of the decision")]
+    public string Reasoning { get; set; } = "";
 }

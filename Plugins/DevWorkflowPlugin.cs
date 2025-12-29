@@ -1,13 +1,15 @@
-using Microsoft.SemanticKernel;
 using System.ComponentModel;
 
 namespace MultiAgentSemanticKernel.Plugins;
 
-public sealed class DevWorkflowPlugin
+/// <summary>
+/// Development workflow tools for the Sequential runner.
+/// Static methods with [Description] attributes for use with AIFunctionFactory.
+/// </summary>
+public static class DevWorkflowTools
 {
-    // Story → OAS → Code/Test/Docs workflow helpers
-    [KernelFunction, Description("Generate OpenAPI from story and AC")]
-    public string Oas_Generate([Description("story")] string story, [Description("acceptance JSON")] string acceptance)
+    [Description("Generate OpenAPI from story and acceptance criteria")]
+    public static string OasGenerate(string story, string acceptance)
         => "{\n" +
            "  \"openapiYaml\": \"openapi: 3.1.0\\ninfo:\\n  title: Avatar Service\\n  version: 1.0.0\\npaths:\\n  /avatars:\\n    post:\\n      summary: Upload avatar up to 2MB\\n      requestBody:\\n        required: true\\n        content:\\n          multipart/form-data:\\n            schema:\\n              type: object\\n              properties:\\n                file:\\n                  type: string\\n                  format: binary\\n      responses:\\n        '201': { description: Created }\",\n" +
            "  \"hints\": {\n" +
@@ -16,18 +18,18 @@ public sealed class DevWorkflowPlugin
            "  }\n" +
            "}";
 
-    [KernelFunction, Description("Create a git branch")]
-    public string Repo_CreateBranch([Description("name")] string name)
+    [Description("Create a git branch")]
+    public static string RepoCreateBranch(string name)
         => "{\n" +
-           "  \"branch\": \"feature/\" + name,\n" +
+           "  \"branch\": \"feature/" + name + "\",\n" +
            "  \"commands\": [\n" +
            "    \"git checkout -b feature/" + name + "\",\n" +
            "    \"git push -u origin feature/" + name + "\"\n" +
            "  ]\n" +
            "}";
 
-    [KernelFunction, Description("Scaffold service")]
-    public string Create_Scaffold([Description("branch")] string branch)
+    [Description("Scaffold service structure")]
+    public static string CreateScaffold(string branch)
         => "{\n" +
            "  \"commitSha\": \"a1b2c3d\",\n" +
            "  \"branch\": \"" + branch + "\",\n" +
@@ -39,8 +41,8 @@ public sealed class DevWorkflowPlugin
            "  ]\n" +
            "}";
 
-    [KernelFunction, Description("Generate tests from OAS and AC")]
-    public string Tests_Generate([Description("openapiYaml")] string openapiYaml, [Description("acceptance JSON")] string acceptance)
+    [Description("Generate tests from OpenAPI and acceptance criteria")]
+    public static string TestsGenerate(string openapiYaml, string acceptance)
         => "{\n" +
            "  \"files\": [\n" +
            "    { \"path\": \"tests/AvatarUploadTests.cs\", \"kind\": \"contract\" },\n" +
@@ -52,8 +54,8 @@ public sealed class DevWorkflowPlugin
            "  }\n" +
            "}";
 
-    [KernelFunction, Description("Update docs and open PR")]
-    public string Docs_Update([Description("branch")] string branch, [Description("summary")] string summary)
+    [Description("Update docs and open PR")]
+    public static string DocsUpdate(string branch, string summary)
         => "{\n" +
            "  \"prUrl\": \"https://example.com/pr/123\",\n" +
            "  \"branch\": \"" + branch + "\",\n" +

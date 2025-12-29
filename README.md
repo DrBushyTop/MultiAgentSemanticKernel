@@ -1,89 +1,93 @@
-# MultiAgentSemanticKernel
+# Multi-Agent Demo
 
-A .NET 9 console demo app showcasing Semantic Kernel multi‑agent orchestration patterns end‑to‑end. It wires up DI, options, Azure OpenAI via `DefaultAzureCredential`, ANSI console output, and multiple orchestration styles (sequential, concurrent, group chat, handoff, magentic).
+A .NET 10 CLI demonstration of multi-agent orchestration patterns using **Microsoft Agent Framework** and **Semantic Kernel**.
+**NOTE:** Semantic Kernel implementation is in the `semanticKernel` branch.
 
-## Requirements
+## Prerequisites
 
-- .NET SDK 9
-- Azure OpenAI access (for real runs)
-- Authentication via `DefaultAzureCredential` (e.g., Azure CLI login, Managed Identity, or Visual Studio/VS Code sign-in)
-
-## Setup
-
-```bash
-# Restore and build
-dotnet restore
-dotnet build
-```
+- .NET 10.0 SDK
+- Azure OpenAI deployment
+- Azure CLI (for authentication via `DefaultAzureCredential`)
 
 ## Configuration
 
-Configuration uses the Options pattern bound from `appsettings.json` and environment variables (prefix `MASKE_`).
-
-- File: `appsettings.json`
+Set up `appsettings.json`:
 
 ```json
 {
   "AzureOpenAI": {
-    "Endpoint": "https://YOUR-AOAI-ENDPOINT.openai.azure.com/",
+    "Endpoint": "https://your-resource.openai.azure.com/",
     "Deployments": {
-      "Llm": "your-llm-deployment"
+      "Llm": "gpt-4o"
     }
-  },
-  "EnableAgentLogging": false
+  }
 }
 ```
 
-- Environment overrides (prefix `MASKE_`):
-  - `MASKE_AzureOpenAI__Endpoint`
-  - `MASKE_AzureOpenAI__Deployments__Llm`
-  - `MASKE_EnableAgentLogging` (bool; if true, agent/orchestration logging is wired into SK)
+Environment overrides (prefix `MASKE_`):
 
-The kernel is configured with Azure OpenAI chat completion using the provided endpoint and deployments. Credentials are sourced from `DefaultAzureCredential`.
+- `MASKE_AzureOpenAI__Endpoint`
+- `MASKE_AzureOpenAI__Deployments__Llm`
 
 ## Running
 
-First argument selects the runner mode. Remaining args are treated as the prompt. **If no prompt is supplied, each runner uses a sensible baked‑in default for demo purposes**.
-
 ```bash
-Usage:
-  dotnet run -- <Sequential|Concurrent|GroupChat|Handoff|Magentic> [prompt...]
+# Build and run
+dotnet build
+dotnet run -- <mode> [prompt...]
 
-# Examples
-dotnet run -- Sequential "As a user, I can upload avatars up to 2MB."
-dotnet run -- Concurrent "Analyze PR: feat(auth): add input validation and fix null handling"
-dotnet run -- GroupChat "Move session state to Azure Cache for Redis Enterprise, SKU E3"
-dotnet run -- Handoff "Add dark mode feature toggle and roll it out safely"
-dotnet run -- Magentic "Stabilize error budget for service 'catalog'"
+# Sequential pipeline (dev workflow)
+dotnet run -- sequential "Create a REST API for user management"
+
+# Concurrent analysis (PR review)
+dotnet run -- concurrent "Analyze PR #123"
+
+# Group chat (architecture discussion)
+dotnet run -- groupchat "Design a caching strategy"
+
+# Handoff (dev triage)
+dotnet run -- handoff "Fix the login bug"
+
+# Magentic (incident response)
+dotnet run -- magentic "High error rate on catalog service"
 ```
 
-## Runners
+## Orchestration Patterns
 
-- Sequential: Executes a deliberate pipeline of agents (BacklogRefiner, Scaffolder, APIDesigner, TestWriter, DocWriter) using Sequential Orchestration. Imports `DevWorkflowPlugin`.
-- Concurrent: Runs multiple analysis agents concurrently (DiffAnalyst, TestImpactor, SecLint, Compliance). Imports `PrAnalysisPlugin`.
-- GroupChat: Round‑robin group chat between TechLead, SRE, Security, and DataEng.
-- Handoff: Triage, Design, and Implementation agents using explicit handoff rules and an interactive callback.
-- Magentic: Ops‑focused flow (DeployInspector, Deployer, Notifier) using Magentic Manager with tools from `OpsPlugin`.
+1. **Sequential**: Agents execute in order, each receiving the previous agent's output
 
-## Console UX
+   - BacklogRefiner → Scaffolder → APIDesigner → TestWriter → DocWriter
 
-Console output is optimized for readability:
+2. **Concurrent**: Agents execute in parallel on the same input
 
-- Agent lifecycle and tool calls are rendered with ANSI colors and icons.
-- User input is highlighted via a dedicated `UserInput` block for dark‑mode friendly contrast.
-- Results are printed compactly after orchestration completes.
+   - DiffAnalyst, TestImpactor, SecLint, Compliance analyze PR simultaneously
 
-## What’s implemented
+3. **GroupChat**: Agents discuss in round-robin turns
 
-- DI via `Host.CreateApplicationBuilder`
-- Options model in `Options/AzureOpenAIOptions.cs`
-- Semantic Kernel 1.65.0 with Azure OpenAI chat completion
-- SK Agents packages (preview) for orchestration patterns
-- Authentication via `DefaultAzureCredential`
-- Console logging, plus a function invocation filter (`ConsoleFunctionInvocationFilter`) to display tool invocations
-- Plugins: `DevWorkflowPlugin`, `PrAnalysisPlugin`, `OpsPlugin` (+ `OpsInspectorTools`, `OpsDeployerTools`, `OpsNotifierTools`)
+   - TechLead, SRE, Security, DataEngineer discuss architecture decisions
+
+4. **Handoff**: Dynamic routing between specialist agents
+
+   - TriageAgent routes to DesignAgent or ImplementationAgent based on request
+
+5. **Magentic**: Manager-driven loop with planning and evaluation
+   - Manager coordinates DeployInspector, Deployer, Notifier for incident response
+
+## Architecture
+
+- **Runtime/AgentFactory.cs**: Creates `ChatClientAgent` instances with consistent configuration
+- **Runtime/WorkflowRunner.cs**: Shared execution logic with event streaming and console output
+- **Runners/\*.cs**: Orchestration-specific implementations
+- **Plugins/\*.cs**: Tool definitions using `AIFunctionFactory.Create()` with `[Description]` attributes
+
+## Technologies
+
+- Microsoft Agent Framework (`Microsoft.Agents.AI.OpenAI`, `Microsoft.Agents.AI.Workflows`)
+- Azure OpenAI via `IChatClient`
+- .NET Dependency Injection
 
 ## Notes
 
-- If you don’t have valid Azure OpenAI configuration, calls will fail at runtime.
-- Some runners use longer timeouts (e.g., 120–300s) to await model output.
+- If you don't have valid Azure OpenAI configuration, calls will fail at runtime
+- Console output shows agent activity and tool calls with ANSI colors
+- Each runner has a sensible default prompt if none is provided

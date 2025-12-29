@@ -1,66 +1,95 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
-using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Runners;
 
-public sealed class GroupChatRunner(Kernel kernel, ILogger<GroupChatRunner> logger, ICliWriter cli)
+public class GroupChatRunner(IChatClient chatClient, ICliWriter cli)
 {
     public async Task RunAsync(string prompt)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            prompt = "Proposed change: Move session state to Azure Cache for Redis Enterprise, SKU E3. Constraints: cost cap, rollout safety.";
+            prompt = "We need to design a new microservices architecture for our e-commerce platform. " +
+                     "Discuss the key considerations and trade-offs.";
         }
-        logger.LogInformation("[Runner] GroupChat");
-        cli.UserInput(prompt);
 
-        var techLead = AgentUtils.Create(
-            name: "TechLead",
-            description: "Balances scope, complexity, and delivery approach; proposes rollout strategy.",
-            instructions: "Assess feasibility and complexity; propose deployment approach. Be concise.",
-            kernel: kernel);
+        cli.Header("GroupChat: Architecture Review");
+        cli.Info($"Topic: {prompt}");
 
-        var sre = AgentUtils.Create(
-            name: "SRE",
-            description: "Evaluates reliability, SLO/SLA impact, rollout safeguards, and ops risk.",
-            instructions: "Evaluate reliability, error budget, rollout, and operational risk. Be concise.",
-            kernel: kernel);
-
-        var security = AgentUtils.Create(
-            name: "Security",
-            description: "Reviews threat model, secrets/egress handling, and key security risks.",
-            instructions: "Assess threat model, secrets handling, egress. Be concise.",
-            kernel: kernel);
-
-        var dataEng = AgentUtils.Create(
-            name: "DataEng",
-            description: "Covers schema changes, migration plan, data quality and footprint.",
-            instructions: "Cover schema, migration strategy, data implications. Be concise.",
-            kernel: kernel);
-
-        var manager = new LoggingRoundRobinGroupChatManager
+        // Create discussion participants (no tools - pure discussion)
+        var techLead = new ChatClientAgent(chatClient, new ChatClientAgentOptions
         {
-            MaximumInvocationCount = 5,
-            // InteractiveCallback = SomeFunc(),
-        };
-        var orchestration = new GroupChatOrchestration(manager, techLead, sre, security, dataEng)
+            Name = "TechLead",
+            ChatOptions = new ChatOptions
+            {
+                Instructions = """
+                    You are a Tech Lead. Balance technical excellence with delivery timelines.
+                    Consider scalability, maintainability, and team capabilities.
+                    Keep responses concise (2-3 paragraphs max).
+                    """,
+                Temperature = 0.7f
+            }
+        });
+
+        var sre = new ChatClientAgent(chatClient, new ChatClientAgentOptions
         {
-            LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = AgentResponseCallbacks.Create(cli),
-            // InputTransform...
-            // ResultTransform...
-        };
+            Name = "SRE",
+            ChatOptions = new ChatOptions
+            {
+                Instructions = """
+                    You are an SRE (Site Reliability Engineer). Focus on reliability, 
+                    observability, and operational concerns. Consider failure modes,
+                    monitoring, and incident response. Keep responses concise.
+                    """,
+                Temperature = 0.7f
+            }
+        });
 
-        var runtime = new InProcessRuntime();
-        await runtime.StartAsync();
+        var security = new ChatClientAgent(chatClient, new ChatClientAgentOptions
+        {
+            Name = "Security",
+            ChatOptions = new ChatOptions
+            {
+                Instructions = """
+                    You are a Security Engineer. Focus on threat modeling, authentication,
+                    authorization, and data protection. Identify potential vulnerabilities.
+                    Keep responses concise.
+                    """,
+                Temperature = 0.7f
+            }
+        });
 
-        var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(120));
-        cli.RunnerResult(output);
+        var dataEng = new ChatClientAgent(chatClient, new ChatClientAgentOptions
+        {
+            Name = "DataEngineer",
+            ChatOptions = new ChatOptions
+            {
+                Instructions = """
+                    You are a Data Engineer. Focus on data modeling, storage choices,
+                    data flow, and analytics requirements. Consider data consistency
+                    and migration strategies. Keep responses concise.
+                    """,
+                Temperature = 0.7f
+            }
+        });
 
-        await runtime.RunUntilIdleAsync();
+        // Build group chat with round-robin manager
+        var workflow = AgentWorkflowBuilder
+            .CreateGroupChatBuilderWith(agents => new RoundRobinGroupChatManager(agents) 
+            { 
+                MaximumIterationCount = 5 
+            })
+            .AddParticipants(techLead, sre, security, dataEng)
+            .Build();
+
+        // Execute workflow
+        var messages = new List<ChatMessage> { new(ChatRole.User, prompt) };
+        var result = await WorkflowRunner.ExecuteAsync(workflow, messages, cli);
+
+        // Display discussion summary
+        cli.Header("Discussion Summary");
+        cli.RunnerResult($"Discussion completed with {result.Count} messages");
     }
 }

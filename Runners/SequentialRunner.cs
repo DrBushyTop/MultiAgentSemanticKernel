@@ -1,71 +1,93 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents.Orchestration.Sequential;
-using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using MultiAgentSemanticKernel.Runtime;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Plugins;
+using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Runners;
 
-public sealed class SequentialRunner(Kernel kernel, ILogger<SequentialRunner> logger, ICliWriter cli)
+public class SequentialRunner(IChatClient chatClient, ICliWriter cli)
 {
     public async Task RunAsync(string prompt)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            var defaultPrompt = "Story: 'As a user, I can upload avatars up to 2MB. Add 3 acceptance criteria.' Write specs and set up a new branch so I can get started.";
-            prompt = defaultPrompt;
+            prompt = "Create a REST API for a todo list application with CRUD operations";
         }
-        logger.LogInformation("[Runner] Sequential");
-        cli.UserInput(prompt);
 
-        kernel.ImportPluginFromType<DevWorkflowPlugin>();
-        var nopluginKernel = kernel.Clone();
-        nopluginKernel.Plugins.Clear();
+        cli.Header("Sequential Pipeline: Dev Workflow");
+        cli.Info($"Prompt: {prompt}");
 
-        var backlogRefiner = AgentUtils.Create(
-            name: "BacklogRefiner",
-            description: "Transforms a raw requirement into a crisp user story with INVEST attributes and acceptance criteria.",
-            instructions: "Rewrite as INVEST story and produce acceptance criteria. Keep acceptance criteria as JSON format. Be concise, no fluff",
-            kernel: nopluginKernel);
-
-        var scaffolder = AgentUtils.Create(
-            name: "Scaffolder",
-            description: "Suggests initial project structure, layers, and TODOs to get started.",
-            instructions: "Describe the service skeleton and TODOs. Create a working branch via tool Repo_CreateBranch(name) and Scaffold(branch). Do not overreach your responsibilities. Be concise, no fluff",
-            kernel: kernel);
-
-        var apiDesigner = AgentUtils.Create(
-            name: "APIDesigner",
-            description: "Outlines REST endpoints and request/response schemas at a high level.",
-            instructions: "Propose endpoints and contracts briefly. Always generate OpenAPI using tool Oas_Generate(story, acceptanceJson); include the YAML. Do not overreach your responsibilities. Be concise, no fluff",
-            kernel: kernel);
-
-        var testWriter = AgentUtils.Create(
-            name: "TestWriter",
-            description: "Derives unit tests and contract tests using the acceptance criteria and API surface.",
-            instructions: "Propose unit and contract tests from AC+OAS. Use tool Tests_Generate(openapiYaml, acceptanceJson) to generate files in repo. Do not overreach your responsibilities. Be concise, no fluff",
-            kernel: kernel);
-
-        var docWriter = AgentUtils.Create(
-            name: "DocWriter",
-            description: "Produces concise documentation: README and endpoint overview for quick onboarding.",
-            instructions: "Draft README + endpoint docs summary. Always use tool Docs_Update(branch, summary) to open a PR when done. Do not overreach your responsibilities. Be concise, no fluff",
-            kernel: kernel);
-
-        var orchestration = new SequentialOrchestration(backlogRefiner, scaffolder, apiDesigner, testWriter, docWriter)
+        // Create tools from DevWorkflowTools
+        var tools = new List<AITool>
         {
-            LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = AgentResponseCallbacks.Create(cli),
+            AIFunctionFactory.Create(DevWorkflowTools.OasGenerate),
+            AIFunctionFactory.Create(DevWorkflowTools.RepoCreateBranch),
+            AIFunctionFactory.Create(DevWorkflowTools.CreateScaffold),
+            AIFunctionFactory.Create(DevWorkflowTools.TestsGenerate),
+            AIFunctionFactory.Create(DevWorkflowTools.DocsUpdate)
         };
 
-        var runtime = new InProcessRuntime();
-        await runtime.StartAsync();
+        // Create agents for the pipeline
+        var backlogRefiner = AgentFactory.CreateAgent(
+            chatClient,
+            name: "BacklogRefiner",
+            instructions: """
+                You are a product owner. Transform the user's request into a clear user story 
+                with acceptance criteria. Output format:
+                USER STORY: As a [user], I want [feature] so that [benefit]
+                ACCEPTANCE CRITERIA:
+                - [criterion 1]
+                - [criterion 2]
+                """);
 
-        var result = await orchestration.InvokeAsync(prompt, runtime);
-        var output = await result.GetValueAsync(TimeSpan.FromSeconds(300));
-        cli.RunnerResult(output);
+        var scaffolder = AgentFactory.CreateAgent(
+            chatClient,
+            name: "Scaffolder",
+            instructions: """
+                You are a software architect. Based on the user story, suggest a project structure.
+                Use the CreateScaffold tool to generate the structure.
+                """,
+            tools);
 
-        await runtime.RunUntilIdleAsync();
+        var apiDesigner = AgentFactory.CreateAgent(
+            chatClient,
+            name: "APIDesigner",
+            instructions: """
+                You are an API designer. Based on the user story and acceptance criteria,
+                design REST endpoints. Use the OasGenerate tool to create an OpenAPI spec.
+                """,
+            tools);
+
+        var testWriter = AgentFactory.CreateAgent(
+            chatClient,
+            name: "TestWriter",
+            instructions: """
+                You are a QA engineer. Based on the API design, generate test stubs.
+                Use the TestsGenerate tool to create test cases.
+                """,
+            tools);
+
+        var docWriter = AgentFactory.CreateAgent(
+            chatClient,
+            name: "DocWriter",
+            instructions: """
+                You are a technical writer. Create documentation for the API.
+                Use the DocsUpdate tool to create documentation.
+                """,
+            tools);
+
+        // Build sequential workflow
+        var workflow = AgentWorkflowBuilder.BuildSequential(
+            backlogRefiner, scaffolder, apiDesigner, testWriter, docWriter);
+
+        // Execute workflow
+        var messages = new List<ChatMessage> { new(ChatRole.User, prompt) };
+        var result = await WorkflowRunner.ExecuteAsync(workflow, messages, cli);
+
+        // Display final result
+        cli.RunnerResult(string.Join("\n\n", result
+            .Where(m => m.Role != ChatRole.User)
+            .Select(m => $"[{m.AuthorName}]: {m.Text}")));
     }
 }

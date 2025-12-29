@@ -1,95 +1,332 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents.Orchestration.Handoff;
-using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using Microsoft.SemanticKernel.ChatCompletion;
+using System.ComponentModel;
+using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Runners;
 
-public sealed class HandoffRunner(Kernel kernel, ILogger<HandoffRunner> logger, ICliWriter cli)
+public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
 {
+    // Simulated user responses for demo purposes (like the old InteractiveCallback)
+    private readonly Queue<string> _simulatedResponses = new(
+    [
+        "Constraints: UI only for now, we want Stripe integration",
+        "Proceed to implementation",
+        "Create a branch and open a PR, then let's review the code",
+        "Looks good, merge it"
+    ]);
+
     public async Task RunAsync(string prompt)
     {
-        string task = string.IsNullOrWhiteSpace(prompt)
-            ? "We need to add a dark mode feature toggle and roll it out safely. Code review is required before I make the merge call."
-            : prompt;
-
-        logger.LogInformation("[Runner] Handoff");
-
-        // Define agents (software development pipeline)
-        var triageAgent = AgentUtils.Create(
-            instructions: "An engineering triage agent that routes and coordinates software development tasks (design, implementation, code review).",
-            name: "DevTriageAgent",
-            description: "Routes product requests into design, implementation, or code review.",
-            kernel: kernel);
-
-        var designAgent = AgentUtils.Create(
-            name: "DesignAgent",
-            instructions: "Handle feature design and technical specification requests.",
-            description: "Creates concise technical designs and clarifies requirements.",
-            kernel: kernel);
-        designAgent.Kernel.ImportPluginFromObject(new DesignPlugin(), nameof(DesignPlugin));
-
-        var implementationAgent = AgentUtils.Create(
-            name: "ImplementationAgent",
-            instructions: "Handle implementation tasks based on the agreed design.",
-            description: "Prepares branches and change summaries, and coordinates PR creation.",
-            kernel: kernel);
-        implementationAgent.Kernel.ImportPluginFromObject(new ImplementationPlugin(), nameof(ImplementationPlugin));
-
-        // Monitor and interactive responses (non-interactive console scenario)
-        var responses = new Queue<string>();
-        responses.Enqueue("Constraints: UI only for now");
-        responses.Enqueue("Proceed to implementation");
-        responses.Enqueue("Create a branch and open a PR, then let's review the code");
-        responses.Enqueue("Looks good, merge it");
-
-        // Optionally, you could use structured inputs and/or outputs here:
-        // HandoffOrchestration<MyInputType, MyOutputType> = new()...
-        var orchestration = new HandoffOrchestration(
-            OrchestrationHandoffs
-                .StartWith(triageAgent)
-                .Add(triageAgent, designAgent, implementationAgent)
-                .Add(designAgent, triageAgent, "Transfer to this agent if the issue is not design related or relates to implementation")
-                .Add(implementationAgent, triageAgent, "Transfer to this agent if the issue is not implementation related"),
-            triageAgent,
-            designAgent,
-            implementationAgent)
+        if (string.IsNullOrWhiteSpace(prompt))
         {
-            InteractiveCallback = () =>
+            prompt = "I need to add a new payment gateway integration to our system";
+        }
+
+        cli.Header("Handoff: Dev Triage (Human-in-the-Loop Demo)");
+        cli.Info($"Request: {prompt}");
+
+        // Track clean conversation history (only text messages, no tool calls)
+        var conversationSummary = new List<(string Role, string Agent, string Text)>();
+        
+        // Initial message
+        conversationSummary.Add(("User", "User", prompt));
+        
+        // Run multiple turns to simulate human-in-the-loop interaction
+        const int maxTurns = 6;
+        for (int turn = 1; turn <= maxTurns; turn++)
+        {
+            cli.Info($"\n--- Turn {turn} ---");
+            
+            // Build messages from conversation summary (clean, no tool calls)
+            var messages = BuildCleanMessages(conversationSummary);
+            
+            // Create fresh workflow for each turn
+            var workflow = CreateHandoffWorkflow();
+            
+            // Execute and collect responses
+            var responses = await ExecuteWorkflowTurn(workflow, messages);
+            
+            // Add agent responses to conversation summary
+            foreach (var (agent, text) in responses.Where(r => !string.IsNullOrWhiteSpace(r.Text)))
             {
-                var input = responses.Count > 0 ? responses.Dequeue() : "No, bye";
-                cli.UserInput(input);
-                return ValueTask.FromResult(new ChatMessageContent(AuthorRole.User, input));
-            },
-            LoggerFactory = kernel.LoggerFactory,
-            ResponseCallback = AgentResponseCallbacks.Create(cli),
+                conversationSummary.Add(("Assistant", agent, text));
+            }
+
+            // Check if we have more simulated responses
+            if (_simulatedResponses.Count > 0)
+            {
+                var userResponse = _simulatedResponses.Dequeue();
+                cli.UserInput(userResponse);
+                conversationSummary.Add(("User", "User", userResponse));
+            }
+            else
+            {
+                // End the conversation
+                var finalResponse = "Thanks, that's all for now!";
+                cli.UserInput(finalResponse);
+                conversationSummary.Add(("User", "User", finalResponse));
+                
+                // One final turn
+                messages = BuildCleanMessages(conversationSummary);
+                workflow = CreateHandoffWorkflow();
+                responses = await ExecuteWorkflowTurn(workflow, messages);
+                
+                foreach (var (agent, text) in responses.Where(r => !string.IsNullOrWhiteSpace(r.Text)))
+                {
+                    conversationSummary.Add(("Assistant", agent, text));
+                }
+                break;
+            }
+        }
+
+        // Display final summary
+        cli.Header("Handoff Complete");
+        var summary = conversationSummary
+            .Where(c => c.Role == "Assistant" && !string.IsNullOrWhiteSpace(c.Text))
+            .TakeLast(3)
+            .Select(c => $"[{c.Agent}]: {(c.Text.Length > 200 ? c.Text[..200] + "..." : c.Text)}");
+        cli.RunnerResult(string.Join("\n\n", summary));
+    }
+
+    private static List<ChatMessage> BuildCleanMessages(List<(string Role, string Agent, string Text)> summary)
+    {
+        var messages = new List<ChatMessage>();
+        foreach (var (role, agent, text) in summary)
+        {
+            var chatRole = role == "User" ? ChatRole.User : ChatRole.Assistant;
+            var msg = new ChatMessage(chatRole, text);
+            if (role == "Assistant")
+            {
+                msg.AuthorName = agent;
+            }
+            messages.Add(msg);
+        }
+        return messages;
+    }
+
+    private async Task<List<(string Agent, string Text)>> ExecuteWorkflowTurn(
+        Workflow workflow, 
+        List<ChatMessage> messages)
+    {
+        var responses = new List<(string Agent, string Text)>();
+        string? lastExecutorId = null;
+        var currentText = new System.Text.StringBuilder();
+        string currentAgent = "";
+
+        await using var run = await InProcessExecution.StreamAsync(workflow, messages);
+        await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
+
+        await foreach (var evt in run.WatchStreamAsync())
+        {
+            switch (evt)
+            {
+                case AgentRunUpdateEvent e:
+                    if (e.ExecutorId != lastExecutorId)
+                    {
+                        // Save previous agent's response
+                        if (!string.IsNullOrWhiteSpace(currentText.ToString()))
+                        {
+                            responses.Add((currentAgent, currentText.ToString()));
+                        }
+                        
+                        lastExecutorId = e.ExecutorId;
+                        currentAgent = e.Update.AuthorName ?? e.ExecutorId;
+                        currentText.Clear();
+                        cli.AgentStart(e.ExecutorId, currentAgent);
+                    }
+
+                    if (!string.IsNullOrEmpty(e.Update.Text))
+                    {
+                        Console.Write(e.Update.Text);
+                        currentText.Append(e.Update.Text);
+                    }
+
+                    // Log function calls (but don't include in message history)
+                    if (e.Update.Contents.OfType<FunctionCallContent>().FirstOrDefault() is FunctionCallContent call)
+                    {
+                        cli.ToolStart(e.ExecutorId, call.Name, 
+                            call.Arguments?.ToDictionary(x => x.Key, x => x.Value?.ToString() ?? "") 
+                            ?? new Dictionary<string, string>());
+                    }
+                    break;
+
+                case WorkflowOutputEvent:
+                    // Save final agent's response
+                    if (!string.IsNullOrWhiteSpace(currentText.ToString()))
+                    {
+                        responses.Add((currentAgent, currentText.ToString()));
+                    }
+                    Console.WriteLine();
+                    return responses;
+
+                case ExecutorFailedEvent failed:
+                    if (failed.Data is Exception ex)
+                    {
+                        cli.Warn($"Agent {failed.ExecutorId} failed: {ex.Message}");
+                    }
+                    break;
+            }
+        }
+
+        // Save any remaining response
+        if (!string.IsNullOrWhiteSpace(currentText.ToString()))
+        {
+            responses.Add((currentAgent, currentText.ToString()));
+        }
+        
+        return responses;
+    }
+
+    private Workflow CreateHandoffWorkflow()
+    {
+        // Create tools for design and implementation agents
+        var designTools = new List<AITool>
+        {
+            AIFunctionFactory.Create(CreateDesignDoc),
+            AIFunctionFactory.Create(CreateBranch)
         };
 
-        var runtime = new InProcessRuntime();
-        await runtime.StartAsync();
+        var implTools = new List<AITool>
+        {
+            AIFunctionFactory.Create(GenerateCode),
+            AIFunctionFactory.Create(OpenPullRequest),
+            AIFunctionFactory.Create(MergePullRequest)
+        };
 
-        cli.UserInput(task);
-        var result = await orchestration.InvokeAsync(task, runtime);
-        var text = await result.GetValueAsync(TimeSpan.FromSeconds(300));
-        cli.RunnerResult(text);
+        // Create triage agent (routes to specialists)
+        var triageAgent = AgentFactory.CreateAgent(
+            chatClient,
+            name: "TriageAgent",
+            instructions: """
+                You are a development triage agent. Analyze incoming requests and route them
+                to the appropriate specialist:
+                - For architecture, design, or planning questions -> hand off to DesignAgent
+                - For implementation, coding, or bug fixes -> hand off to ImplementationAgent
+                
+                When an agent completes work and returns to you, summarize what was done and 
+                ask the user if they want to proceed further. Continue until the user says 
+                they are done or the task is complete.
+                
+                Always explain why you're routing to a specific agent.
+                """);
 
-        await runtime.RunUntilIdleAsync();
+        // Create design specialist
+        var designAgent = AgentFactory.CreateAgent(
+            chatClient,
+            name: "DesignAgent",
+            instructions: """
+                You are a software design specialist. Create design documents, 
+                architecture diagrams, and technical specifications.
+                Use the CreateDesignDoc tool to generate documentation.
+                Use the CreateBranch tool to create feature branches.
+                When you need more information from the user, ask clearly.
+                When design is complete and user approves, hand back to TriageAgent.
+                """,
+            designTools);
+
+        // Create implementation specialist
+        var implAgent = AgentFactory.CreateAgent(
+            chatClient,
+            name: "ImplementationAgent",
+            instructions: """
+                You are an implementation specialist. Write code, fix bugs,
+                and implement features based on designs.
+                Use the GenerateCode tool to create code.
+                Use the OpenPullRequest tool to create PRs for review.
+                Use the MergePullRequest tool to merge approved PRs.
+                When implementation is complete, hand back to TriageAgent.
+                """,
+            implTools);
+
+        // Build handoff workflow
+        return AgentWorkflowBuilder.CreateHandoffBuilderWith(triageAgent)
+            .WithHandoffs(triageAgent, [designAgent, implAgent])
+            .WithHandoffs(designAgent, [triageAgent, implAgent])
+            .WithHandoffs(implAgent, [triageAgent, designAgent])
+            .Build();
     }
 
-    private sealed class DesignPlugin
+    [Description("Create a design document for the given feature")]
+    private static string CreateDesignDoc(string feature, string requirements)
     {
-        [KernelFunction]
-        public string CreateDesignSummary(string title, string constraints) => $"Design for '{title}': scope, UX impact, risks, {constraints}.";
+        return $"""
+            # Design Document: {feature}
+            
+            ## Requirements
+            {requirements}
+            
+            ## Proposed Solution
+            - Component diagram: PaymentGateway -> StripeAdapter -> StripeSDK
+            - Sequence diagram: User -> API -> PaymentService -> Stripe -> Webhook
+            - API contracts: POST /payments, GET /payments/:id, POST /refunds
+            
+            ## Implementation Notes
+            - Estimated effort: 2 sprints
+            - Dependencies: Stripe.NET SDK, Database migrations for payment records
+            - Security: PCI DSS compliance required, use Stripe Elements for card input
+            """;
     }
 
-    private sealed class ImplementationPlugin
+    [Description("Create a feature branch for the implementation")]
+    private static string CreateBranch(string branchName)
     {
-        [KernelFunction]
-        public string PrepareBranch(string name) => $"Branch '{name}' is ready.";
+        return $"Created branch: feature/{branchName}";
+    }
 
-        [KernelFunction]
-        public string OpenPullRequest(string title) => $"Pull request created: {title}.";
+    [Description("Generate code for the given component")]
+    private static string GenerateCode(string component, string specification)
+    {
+        return $$"""
+            // Generated code for {{component}}
+            public class {{component}}
+            {
+                private readonly IStripeClient _stripe;
+                
+                public {{component}}(IStripeClient stripe)
+                {
+                    _stripe = stripe;
+                }
+                
+                // Based on: {{specification}}
+                public async Task<PaymentResult> ProcessPaymentAsync(PaymentRequest request)
+                {
+                    var options = new PaymentIntentCreateOptions
+                    {
+                        Amount = request.Amount,
+                        Currency = request.Currency,
+                        PaymentMethodTypes = new List<string> { "card" }
+                    };
+                    
+                    var intent = await _stripe.PaymentIntentService.CreateAsync(options);
+                    return new PaymentResult { IntentId = intent.Id, Status = intent.Status };
+                }
+            }
+            """;
+    }
+
+    [Description("Open a pull request for code review")]
+    private static string OpenPullRequest(string title, string description)
+    {
+        return $"""
+            Pull Request Created:
+            - Title: {title}
+            - Description: {description}
+            - PR #42: https://github.com/example/repo/pull/42
+            - Status: Ready for review
+            - Reviewers: @team-payments
+            """;
+    }
+
+    [Description("Merge an approved pull request")]
+    private static string MergePullRequest(int prNumber)
+    {
+        return $"""
+            Pull Request #{prNumber} merged successfully!
+            - Merged to: main
+            - Commit: abc123def
+            - CI/CD: Deployment triggered to staging
+            """;
     }
 }

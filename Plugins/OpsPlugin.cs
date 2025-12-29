@@ -1,194 +1,153 @@
-using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using System.Text.Json;
-using System.Linq;
-using System.Collections.Generic;
-using MultiAgentSemanticKernel.Runtime;
 
 namespace MultiAgentSemanticKernel.Plugins;
 
-public sealed class OpsPlugin
+/// <summary>
+/// Shared state for Ops tools - enables realistic simulation of deployments and notifications.
+/// </summary>
+public class OpsState
 {
-    private readonly object _lock = new();
-    private readonly Dictionary<string, ServiceState> _services = new();
-    private string? _defaultService;
+    public Dictionary<string, ServiceInfo> Services { get; } = new();
+    public List<string> Notifications { get; } = new();
+    public List<DeploymentRecord> Deployments { get; } = new();
+    public List<VersionInfo> AvailableVersions { get; } = new();
+}
 
-    // Runner can seed initial state via this method before importing the plugin
-    public void SeedService(string service, string version, double p95Ms, double errorRate, string env = "prod", IEnumerable<string>? owners = null)
+public record ServiceInfo(string Name, string Version, double P95Ms, double ErrorRate, string[] Owners);
+public record DeploymentRecord(string Service, string Version, DateTime Timestamp, string Status);
+public record VersionInfo(string Version, string Notes);
+
+/// <summary>
+/// Inspector tools - for checking service status and deployment history.
+/// </summary>
+public class OpsInspectorTools(OpsState state)
+{
+    [Description("Get current status of a service including version, latency, and error rate")]
+    public string GetServiceStatus(string serviceName)
     {
-        lock (_lock)
+        if (state.Services.TryGetValue(serviceName, out var info))
         {
-            _services[service] = new ServiceState
-            {
-                Service = service,
-                Version = version,
-                StartedAt = DateTime.UtcNow.AddHours(-1).ToString("o"),
-                P95Ms = p95Ms,
-                ErrorRate = errorRate,
-                Env = env,
-                Owners = owners?.ToArray() ?? new[] { "@team-catalog" },
-                Rollbacks = 0,
-                LastAction = "deploy",
-                AvailableVersions = new List<VersionInfo>
-                {
-                    new VersionInfo { Version = "1.31", Notes = "previous stable" }
-                }
-            };
-            _defaultService ??= service;
+            return $"""
+                Service: {info.Name}
+                Version: {info.Version}
+                P95 Latency: {info.P95Ms}ms
+                Error Rate: {info.ErrorRate:P1}
+                Owners: {string.Join(", ", info.Owners)}
+                """;
         }
+        return $"Service '{serviceName}' not found";
     }
 
-    // Ops: deploys, flags, comms
-    [KernelFunction, Description("Get deploy status")]
-    public string Deploy_Status([Description("service")] string service)
+    [Description("List recent deployments for a service")]
+    public string GetRecentDeployments(string serviceName)
     {
-        var s = GetServiceOrDefault(service);
-        var payload = new
+        var deployments = state.Deployments
+            .Where(d => d.Service == serviceName)
+            .OrderByDescending(d => d.Timestamp)
+            .Take(5);
+        
+        if (!deployments.Any())
         {
-            service = s.Service,
-            version = s.Version,
-            startedAt = s.StartedAt,
-            health = new { p95_ms = (int)Math.Round(s.P95Ms), errorRate = Math.Round(s.ErrorRate, 3) },
-            env = s.Env,
-            owners = s.Owners,
-            lastAction = s.LastAction,
-            rollbacks = s.Rollbacks,
-        };
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
-    }
-
-    [KernelFunction, Description("Deploy a specific version (use for rollback or upgrade)")]
-    public string Deploy_Version([Description("service")] string service, [Description("version")] string version)
-    {
-        var prevColor = Console.ForegroundColor;
-        Console.ForegroundColor = ConsoleColor.Blue;
-        Console.WriteLine($"ℹ️  Deploying version {version} for service {service}");
-        Console.ForegroundColor = prevColor;
-        var s = GetServiceOrDefault(service);
-        lock (_lock)
-        {
-            var isRollback = string.Compare(version, s.Version, StringComparison.Ordinal) < 0 || version == "1.31";
-            if (isRollback)
-            {
-                s.Rollbacks += 1;
-                s.LastAction = "rollback";
-            }
-            else
-            {
-                s.LastAction = "deploy";
-            }
-
-            s.Version = version;
-            s.StartedAt = DateTime.UtcNow.ToString("o");
-            // simple model for health change by version
-            if (version == "1.31")
-            {
-                s.P95Ms = Math.Max(220, s.P95Ms * 0.6);
-                s.ErrorRate = Math.Max(0.010, s.ErrorRate * 0.35);
-                // after rollback, hotfix 1.33 becomes available
-                if (!s.AvailableVersions.Any(v => v.Version == "1.33"))
-                {
-                    s.AvailableVersions.Add(new VersionInfo { Version = "1.33", Notes = "hotfix: improves error rate" });
-                }
-            }
-            else if (version == "1.33")
-            {
-                // hotfix installed, improve further
-                s.P95Ms = Math.Max(200, s.P95Ms * 0.85);
-                s.ErrorRate = Math.Max(0.006, s.ErrorRate * 0.2);
-            }
-            else
-            {
-                // generic small change
-                s.P95Ms = Math.Max(200, s.P95Ms * 0.95);
-                s.ErrorRate = Math.Max(0.010, s.ErrorRate * 0.95);
-            }
+            return $"No recent deployments for '{serviceName}'";
         }
-
-        var payload = new
-        {
-            service = s.Service,
-            version = s.Version,
-            ok = true,
-            newHealth = new { p95_ms = (int)Math.Round(s.P95Ms), errorRate = Math.Round(s.ErrorRate, 3) },
-            rollbacks = s.Rollbacks,
-        };
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+        
+        return string.Join("\n", deployments.Select(d => 
+            $"- {d.Version} deployed at {d.Timestamp:g} ({d.Status})"));
     }
 
-    [KernelFunction, Description("Post a message to comms")]
-    public string Comms_Post([Description("channel")] string channel, [Description("message")] string message)
+    [Description("List available versions for a service")]
+    public string GetAvailableVersions(string serviceName)
     {
-        var prevColor = Console.ForegroundColor;
-        Console.ForegroundColor = ConsoleColor.Blue;
-        Console.WriteLine($"ℹ️  Message to channel {channel}: {message}");
-        Console.ForegroundColor = prevColor;
-        return "{\n" +
-           "  \"channel\": \"" + channel + "\",\n" +
-           "  \"message\": \"" + message.Replace("\"", "\\\"") + "\",\n" +
-           "  \"link\": \"https://chat.example/msg/1\"\n" +
-           "}";
-    }
-
-
-    [KernelFunction, Description("List available versions with notes")]
-    public string Versions_Available([Description("service")] string service)
-    {
-        var s = GetServiceOrDefault(service);
-        var payload = new
+        if (!state.AvailableVersions.Any())
         {
-            service = s.Service,
-            versions = s.AvailableVersions.Select(v => new { version = v.Version, notes = v.Notes }).ToArray()
-        };
-        var prevColor = Console.ForegroundColor;
-        foreach (var v in s.AvailableVersions)
-        {
-            Console.ForegroundColor = ConsoleColor.Blue;
-            Console.WriteLine($"ℹ️  Available version: {v.Version} - {v.Notes}");
+            return "No versions available";
         }
-        Console.ForegroundColor = prevColor;
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
-    }
-
-    private ServiceState GetServiceOrDefault(string service)
-    {
-        lock (_lock)
-        {
-            if (!string.IsNullOrWhiteSpace(service) && _services.TryGetValue(service, out var s))
-            {
-                return s;
-            }
-            if (_defaultService is not null && _services.TryGetValue(_defaultService, out var def))
-            {
-                return def;
-            }
-            // initialize a minimal default to keep things simple
-            SeedService("service", "1.0.0", 500, 0.02);
-            return _services["service"];
-        }
-    }
-
-    // serialization helper is inlined above
-
-    private sealed class ServiceState
-    {
-        public string Service { get; set; } = "service";
-        public string Version { get; set; } = "1.0.0";
-        public string StartedAt { get; set; } = DateTime.UtcNow.ToString("o");
-        public double P95Ms { get; set; } = 500;
-        public double ErrorRate { get; set; } = 0.02;
-        public string Env { get; set; } = "prod";
-        public string[] Owners { get; set; } = Array.Empty<string>();
-        public int Rollbacks { get; set; } = 0;
-        public string LastAction { get; set; } = "deploy";
-        public List<VersionInfo> AvailableVersions { get; set; } = new();
-    }
-
-    private sealed class VersionInfo
-    {
-        public string Version { get; set; } = string.Empty;
-        public string Notes { get; set; } = string.Empty;
+        
+        return string.Join("\n", state.AvailableVersions.Select(v => 
+            $"- {v.Version}: {v.Notes}"));
     }
 }
 
+/// <summary>
+/// Deployer tools - for deploying and rolling back services.
+/// </summary>
+public class OpsDeployerTools(OpsState state)
+{
+    [Description("Deploy a new version of a service")]
+    public string DeployService(string serviceName, string version)
+    {
+        var record = new DeploymentRecord(serviceName, version, DateTime.UtcNow, "Success");
+        state.Deployments.Add(record);
+        
+        if (state.Services.TryGetValue(serviceName, out var info))
+        {
+            // Update service info with new version
+            state.Services[serviceName] = info with { Version = version };
+            
+            // Simulate improved metrics for newer versions
+            if (version == "1.33")
+            {
+                state.Services[serviceName] = state.Services[serviceName] with 
+                { 
+                    P95Ms = Math.Max(200, info.P95Ms * 0.85),
+                    ErrorRate = Math.Max(0.006, info.ErrorRate * 0.2)
+                };
+            }
+        }
+        
+        return $"Deployed {serviceName} v{version} successfully";
+    }
 
+    [Description("Rollback a service to a previous version")]
+    public string RollbackService(string serviceName, string version)
+    {
+        var record = new DeploymentRecord(serviceName, version, DateTime.UtcNow, "Rollback");
+        state.Deployments.Add(record);
+        
+        if (state.Services.TryGetValue(serviceName, out var info))
+        {
+            state.Services[serviceName] = info with { Version = version };
+            
+            // Rollback typically improves stability
+            state.Services[serviceName] = state.Services[serviceName] with 
+            { 
+                P95Ms = Math.Max(220, info.P95Ms * 0.6),
+                ErrorRate = Math.Max(0.010, info.ErrorRate * 0.35)
+            };
+            
+            // Make hotfix available after rollback
+            if (!state.AvailableVersions.Any(v => v.Version == "1.33"))
+            {
+                state.AvailableVersions.Add(new VersionInfo("1.33", "hotfix: improves error rate"));
+            }
+        }
+        
+        return $"Rolled back {serviceName} to v{version}";
+    }
+}
+
+/// <summary>
+/// Notifier tools - for sending notifications and paging on-call.
+/// </summary>
+public class OpsNotifierTools(OpsState state)
+{
+    [Description("Send notification to a channel about an incident or update")]
+    public string SendNotification(string channel, string message)
+    {
+        state.Notifications.Add($"[{channel}] {message}");
+        return $"Notification sent to {channel}: {message}";
+    }
+
+    [Description("Page on-call engineer for critical issues")]
+    public string PageOnCall(string serviceName, string severity, string reason)
+    {
+        if (state.Services.TryGetValue(serviceName, out var info))
+        {
+            var owners = string.Join(", ", info.Owners);
+            state.Notifications.Add($"[PAGE-{severity}] {owners}: {reason}");
+            return $"Paged {owners} for {serviceName} ({severity}): {reason}";
+        }
+        return $"Could not page - service '{serviceName}' not found";
+    }
+}
