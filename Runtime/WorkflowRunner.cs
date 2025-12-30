@@ -3,12 +3,29 @@ using Microsoft.Extensions.AI;
 
 namespace MultiAgentSemanticKernel.Runtime;
 
+/// <summary>
+/// Delegate for handling interactive input requests during workflow execution.
+/// Return null to end the conversation, or a ChatMessage with the user's response.
+/// </summary>
+public delegate ValueTask<ChatMessage?> InteractiveCallback();
+
 public static class WorkflowRunner
 {
+    /// <summary>
+    /// Executes a workflow with optional interactive callback for human-in-the-loop scenarios.
+    /// </summary>
+    /// <param name="workflow">The workflow to execute</param>
+    /// <param name="messages">Initial messages to send to the workflow</param>
+    /// <param name="cli">CLI writer for output</param>
+    /// <param name="interactiveCallback">Optional callback invoked when the workflow requests user input. 
+    /// Return null to end the conversation.</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The final list of chat messages from the workflow</returns>
     public static async Task<List<ChatMessage>> ExecuteAsync(
         Workflow workflow,
         List<ChatMessage> messages,
         ICliWriter cli,
+        InteractiveCallback? interactiveCallback = null,
         CancellationToken cancellationToken = default)
     {
         // Track accumulated content per executor
@@ -54,6 +71,31 @@ public static class WorkflowRunner
                             ? name 
                             : completed.ExecutorId;
                         cli.AgentResult(authorName, content.ToString());
+                        
+                        // Clear content after outputting (executor might be invoked again)
+                        executorContent[completed.ExecutorId].Clear();
+                    }
+                    break;
+
+                case RequestInfoEvent requestInfo:
+                    // Workflow is requesting external input (human-in-the-loop)
+                    if (interactiveCallback != null)
+                    {
+                        var userMessage = await interactiveCallback();
+                        if (userMessage != null)
+                        {
+                            cli.UserInput(userMessage.Text ?? "");
+                            
+                            // Send response back to the workflow
+                            var response = requestInfo.Request.CreateResponse(userMessage);
+                            await run.SendResponseAsync(response);
+                        }
+                        else
+                        {
+                            // User wants to end - send empty response to let workflow complete
+                            var response = requestInfo.Request.CreateResponse(new ChatMessage(ChatRole.User, ""));
+                            await run.SendResponseAsync(response);
+                        }
                     }
                     break;
 

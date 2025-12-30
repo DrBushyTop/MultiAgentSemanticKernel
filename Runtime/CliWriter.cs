@@ -39,9 +39,9 @@ public sealed class AnsiCliWriter : ICliWriter
         lock (Lock)
         {
             Console.Write("\x1b[2m"); // dim
-            Console.Write("ℹ ");
-            Console.Write("\x1b[0m");
+            Console.Write("→ ");
             Console.WriteLine(text);
+            Console.Write("\x1b[0m");
         }
     }
 
@@ -52,7 +52,7 @@ public sealed class AnsiCliWriter : ICliWriter
             Console.WriteLine();
             Console.Write("\x1b[2m"); // dim
             Console.Write("→ ");
-            Console.Write("\x1b[36m"); // cyan
+            Console.Write("\x1b[96m"); // bright cyan
             Console.Write(agentName);
             Console.Write("\x1b[0m");
             if (agentId != agentName)
@@ -71,11 +71,11 @@ public sealed class AnsiCliWriter : ICliWriter
             Console.WriteLine();
             Console.Write("\x1b[2m"); // dim
             Console.Write("[");
-            Console.Write("\x1b[33m"); // yellow for manager
+            Console.Write("\x1b[93m"); // bright yellow for manager
             Console.Write(managerName);
             Console.Write("\x1b[0m\x1b[2m"); // reset to dim
             Console.Write("] selected → ");
-            Console.Write("\x1b[36m"); // cyan for agent
+            Console.Write("\x1b[96m"); // bright cyan for agent
             Console.Write(agentName);
             Console.Write("\x1b[0m");
             Console.WriteLine();
@@ -86,12 +86,17 @@ public sealed class AnsiCliWriter : ICliWriter
     {
         lock (Lock)
         {
-            Console.Write("\x1b[32m"); // green
-            Console.Write("[");
+            Console.Write("\x1b[92m"); // bright green
+            Console.Write("💬 ");
             Console.Write(agentName);
-            Console.Write("]");
             Console.Write("\x1b[0m");
             Console.Write(" ");
+            Console.Write("\x1b[2m"); // dim timestamp
+            Console.Write("[");
+            Console.Write(DateTime.Now.ToString("HH:mm:ss"));
+            Console.Write("]");
+            Console.Write("\x1b[0m");
+            Console.WriteLine();
             Console.WriteLine(result);
             Console.WriteLine();
         }
@@ -114,20 +119,40 @@ public sealed class AnsiCliWriter : ICliWriter
     {
         lock (Lock)
         {
-            Console.Write("\x1b[2m"); // dim
             Console.Write("  🔧 ");
-            Console.Write("\x1b[35m"); // magenta function
-            Console.Write(toolName);
-            Console.Write("\x1b[0m");
+            
+            // Split toolName into plugin.function if it contains a dash (plugin-function format)
+            var parts = toolName.Split('-', 2);
+            if (parts.Length == 2)
+            {
+                Console.Write("\x1b[96m"); // bright cyan plugin
+                Console.Write(parts[0]);
+                Console.Write("\x1b[0m");
+                Console.Write(".");
+                Console.Write("\x1b[95m"); // bright magenta function
+                Console.Write(parts[1]);
+                Console.Write("\x1b[0m");
+            }
+            else
+            {
+                Console.Write("\x1b[95m"); // bright magenta function
+                Console.Write(toolName);
+                Console.Write("\x1b[0m");
+            }
+            
+            Console.Write("\x1b[2m"); // dim for "by"
             Console.Write(" by ");
-            Console.Write("\x1b[36m"); // cyan agent
+            Console.Write("\x1b[0m");
+            Console.Write("\x1b[96m"); // bright cyan agent
             Console.Write(agentName);
             Console.Write("\x1b[0m");
             if (args.Count > 0)
             {
+                Console.Write("\x1b[2m"); // dim for args
                 Console.Write(" (");
                 Console.Write(string.Join(", ", args.Select(kv => $"{kv.Key}={kv.Value}")));
                 Console.Write(")");
+                Console.Write("\x1b[0m");
             }
             Console.WriteLine();
         }
@@ -138,7 +163,7 @@ public sealed class AnsiCliWriter : ICliWriter
         lock (Lock)
         {
             Console.WriteLine();
-            Console.Write("\x1b[36m"); // cyan label
+            Console.Write("\x1b[96m"); // bright cyan label
             Console.Write("🏁 Result");
             Console.Write("\x1b[0m");
             Console.WriteLine();

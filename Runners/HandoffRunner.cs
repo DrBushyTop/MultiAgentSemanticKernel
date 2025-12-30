@@ -13,7 +13,8 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
         "Constraints: UI only for now, we want Stripe integration",
         "Proceed to implementation",
         "Create a branch and open a PR, then let's review the code",
-        "Looks good, merge it"
+        "Looks good, merge it",
+        "Thanks, that's all for now!"
     ]);
 
     public async Task RunAsync(string prompt)
@@ -26,157 +27,53 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
         cli.Header("Handoff: Dev Triage (Human-in-the-Loop Demo)");
         cli.Info($"Request: {prompt}");
 
-        // Track clean conversation history (only text messages, no tool calls)
-        var conversationSummary = new List<(string Role, string Agent, string Text)>
+        // Track conversation history
+        var messages = new List<ChatMessage>
         {
-            // Initial message
-            ("User", "User", prompt)
+            new(ChatRole.User, prompt)
         };
-        
+
         // Run multiple turns to simulate human-in-the-loop interaction
-        const int maxTurns = 6;
-        for (int turn = 1; turn <= maxTurns; turn++)
+        // (Agent Framework handoff workflows complete per turn, so we loop externally)
+        while (_simulatedResponses.Count >= 0)
         {
-            cli.TurnSeparator(turn);
-            
-            // Build messages from conversation summary (clean, no tool calls)
-            var messages = BuildCleanMessages(conversationSummary);
-            
-            // Create fresh workflow for each turn
+            // Create fresh workflow for each turn (handoff workflows are stateless)
             var workflow = CreateHandoffWorkflow();
             
-            // Execute and collect responses
-            var responses = await ExecuteWorkflowTurn(workflow, messages);
+            // Execute workflow turn
+            var resultMessages = await WorkflowRunner.ExecuteAsync(workflow, messages, cli);
             
-            // Add agent responses to conversation summary
-            foreach (var (agent, text) in responses.Where(r => !string.IsNullOrWhiteSpace(r.Text)))
+            // Add assistant responses to conversation history
+            foreach (var msg in resultMessages.Where(m => m.Role == ChatRole.Assistant))
             {
-                conversationSummary.Add(("Assistant", agent, text));
+                var textContent = msg.Text;
+                if (!string.IsNullOrWhiteSpace(textContent))
+                {
+                    messages.Add(new ChatMessage(ChatRole.Assistant, textContent) { AuthorName = msg.AuthorName });
+                }
             }
 
-            // Check if we have more simulated responses
+            // Get next user input (simulated)
             if (_simulatedResponses.Count > 0)
             {
                 var userResponse = _simulatedResponses.Dequeue();
                 cli.UserInput(userResponse);
-                conversationSummary.Add(("User", "User", userResponse));
+                messages.Add(new ChatMessage(ChatRole.User, userResponse));
             }
             else
             {
-                // End the conversation
-                var finalResponse = "Thanks, that's all for now!";
-                cli.UserInput(finalResponse);
-                conversationSummary.Add(("User", "User", finalResponse));
-                
-                // One final turn
-                messages = BuildCleanMessages(conversationSummary);
-                workflow = CreateHandoffWorkflow();
-                responses = await ExecuteWorkflowTurn(workflow, messages);
-                
-                foreach (var (agent, text) in responses.Where(r => !string.IsNullOrWhiteSpace(r.Text)))
-                {
-                    conversationSummary.Add(("Assistant", agent, text));
-                }
+                // No more responses - end the conversation
                 break;
             }
         }
 
         // Display final summary
         cli.Header("Handoff Complete");
-        var summary = conversationSummary
-            .Where(c => c.Role == "Assistant" && !string.IsNullOrWhiteSpace(c.Text))
+        var summary = messages
+            .Where(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.Text))
             .TakeLast(3)
-            .Select(c => $"[{c.Agent}]: {(c.Text.Length > 200 ? c.Text[..200] + "..." : c.Text)}");
+            .Select(m => $"[{m.AuthorName ?? "Agent"}]: {(m.Text!.Length > 200 ? m.Text[..200] + "..." : m.Text)}");
         cli.RunnerResult(string.Join("\n\n", summary));
-    }
-
-    private static List<ChatMessage> BuildCleanMessages(List<(string Role, string Agent, string Text)> summary)
-    {
-        var messages = new List<ChatMessage>();
-        foreach (var (role, agent, text) in summary)
-        {
-            var chatRole = role == "User" ? ChatRole.User : ChatRole.Assistant;
-            var msg = new ChatMessage(chatRole, text);
-            if (role == "Assistant")
-            {
-                msg.AuthorName = agent;
-            }
-            messages.Add(msg);
-        }
-        return messages;
-    }
-
-    private async Task<List<(string Agent, string Text)>> ExecuteWorkflowTurn(
-        Workflow workflow, 
-        List<ChatMessage> messages)
-    {
-        var responses = new List<(string Agent, string Text)>();
-        string? lastExecutorId = null;
-        var currentText = new System.Text.StringBuilder();
-        string currentAgent = "";
-
-        await using var run = await InProcessExecution.StreamAsync(workflow, messages);
-        await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
-
-        await foreach (var evt in run.WatchStreamAsync())
-        {
-            switch (evt)
-            {
-                case AgentRunUpdateEvent e:
-                    if (e.ExecutorId != lastExecutorId)
-                    {
-                        // Save previous agent's response
-                        if (!string.IsNullOrWhiteSpace(currentText.ToString()))
-                        {
-                            responses.Add((currentAgent, currentText.ToString()));
-                        }
-                        
-                        lastExecutorId = e.ExecutorId;
-                        currentAgent = e.Update.AuthorName ?? e.ExecutorId;
-                        currentText.Clear();
-                        cli.AgentStart(e.ExecutorId, currentAgent);
-                    }
-
-                    if (!string.IsNullOrEmpty(e.Update.Text))
-                    {
-                        Console.Write(e.Update.Text);
-                        currentText.Append(e.Update.Text);
-                    }
-
-                    // Log function calls (but don't include in message history)
-                    if (e.Update.Contents.OfType<FunctionCallContent>().FirstOrDefault() is { } call)
-                    {
-                        cli.ToolStart(e.ExecutorId, call.Name, 
-                            call.Arguments?.ToDictionary(x => x.Key, x => x.Value?.ToString() ?? "") 
-                            ?? new Dictionary<string, string>());
-                    }
-                    break;
-
-                case WorkflowOutputEvent:
-                    // Save final agent's response
-                    if (!string.IsNullOrWhiteSpace(currentText.ToString()))
-                    {
-                        responses.Add((currentAgent, currentText.ToString()));
-                    }
-                    Console.WriteLine();
-                    return responses;
-
-                case ExecutorFailedEvent failed:
-                    if (failed.Data is { } ex)
-                    {
-                        cli.Warn($"Agent {failed.ExecutorId} failed: {ex.Message}");
-                    }
-                    break;
-            }
-        }
-
-        // Save any remaining response
-        if (!string.IsNullOrWhiteSpace(currentText.ToString()))
-        {
-            responses.Add((currentAgent, currentText.ToString()));
-        }
-        
-        return responses;
     }
 
     private Workflow CreateHandoffWorkflow()
