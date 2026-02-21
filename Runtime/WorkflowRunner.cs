@@ -32,14 +32,14 @@ public static class WorkflowRunner
         var executorContent = new Dictionary<string, System.Text.StringBuilder>();
         var executorNames = new Dictionary<string, string>();
 
-        StreamingRun run = await InProcessExecution.StreamAsync(workflow, messages, cancellationToken: cancellationToken);
+        StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, messages, cancellationToken: cancellationToken);
         await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
 
         await foreach (WorkflowEvent evt in run.WatchStreamAsync(cancellationToken))
         {
             switch (evt)
             {
-                case AgentRunUpdateEvent e:
+                case AgentResponseUpdateEvent e:
                     // Initialize tracking for this executor if first time seeing it
                     if (!executorContent.ContainsKey(e.ExecutorId))
                     {

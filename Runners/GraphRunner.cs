@@ -8,6 +8,8 @@ namespace MultiAgentSemanticKernel.Runners;
 /// <summary>
 /// Executor that starts the concurrent code review processing by dispatching messages to the reviewers.
 /// </summary>
+[SendsMessage(typeof(ChatMessage))]
+[SendsMessage(typeof(TurnToken))]
 internal sealed class ConcurrentStartExecutor : Executor<List<ChatMessage>>
 {
     public ConcurrentStartExecutor() : base("ConcurrentStart")
@@ -41,6 +43,8 @@ internal sealed class ConcurrentStartExecutor : Executor<List<ChatMessage>>
 /// Fan-in executors are called once per source, so we must accumulate results
 /// and only forward when all expected sources have completed.
 /// </summary>
+[SendsMessage(typeof(ChatMessage))]
+[SendsMessage(typeof(TurnToken))]
 internal sealed class ReviewCombinerExecutor : Executor<List<ChatMessage>>
 {
     private readonly List<ChatMessage> _collectedMessages = [];
@@ -250,7 +254,7 @@ public class GraphRunner(IChatClient chatClient, ICliWriter cli)
         builder.AddFanOutEdge(startExecutor, [qualityReviewer, securityReviewer]);
 
         // FAN-IN: Both reviewers feed into combiner executor (message formatting only)
-        builder.AddFanInEdge([qualityReviewer, securityReviewer], combinerExecutor);
+        builder.AddFanInBarrierEdge([qualityReviewer, securityReviewer], combinerExecutor);
 
         // FINAL EDGE: Combiner feeds formatted prompt to report generator (LLM analysis happens here)
         builder.AddEdge(combinerExecutor, reportGenerator);

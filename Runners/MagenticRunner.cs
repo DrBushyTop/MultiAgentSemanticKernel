@@ -117,20 +117,12 @@ public class MagenticRunner(IChatClient chatClient, ICliWriter cli)
 
             // Manager evaluates and decides
             cli.AgentStart("Manager", "Manager");
-            var managerResponse = await manager.RunAsync(history);
+            var managerResponse = await manager.RunAsync<ManagerDecision>(
+                history,
+                session: null,
+                serializerOptions: JsonSerializerOptions.Web);
             
-            ManagerDecision decision;
-            try
-            {
-                decision = managerResponse.Deserialize<ManagerDecision>(JsonSerializerOptions.Web);
-            }
-            catch
-            {
-                // If parsing fails, try to extract from text
-                var text = managerResponse.Messages.LastOrDefault()?.Text ?? "";
-                cli.Warn($"Could not parse manager decision, raw response: {text}");
-                continue;
-            }
+            var decision = managerResponse.Result;
             
             Console.WriteLine($"Resolved: {decision.IsResolved}");
             Console.WriteLine($"Next Agent: {decision.NextAgent}");
