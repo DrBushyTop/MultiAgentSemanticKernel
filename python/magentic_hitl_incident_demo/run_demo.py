@@ -24,86 +24,6 @@ from agent_framework.orchestrations import (
 )
 from azure.identity import DefaultAzureCredential
 
-# ---------------------------------------------------------------------------
-# ANSI helpers — mirrors the style used in Runtime/CliWriter.cs
-# ---------------------------------------------------------------------------
-_R = "\x1b[0m"  # reset
-
-
-def _header(text: str) -> None:
-    """Bold cyan banner: ═══ text ═══"""
-    print(f"\n\x1b[1;36m═══ {text} ═══{_R}\n")
-
-
-def _info(text: str) -> None:
-    """Dim arrow + text for metadata lines."""
-    print(f"\x1b[2m→ {text}{_R}")
-
-
-def _agent_start(name: str) -> None:
-    """Dim arrow + bright-cyan agent name header before streaming tokens."""
-    print(f"\n\x1b[2m→ \x1b[96m{name}{_R}")
-
-
-def _agent_token(text: str, *, end: str = "", flush: bool = False) -> None:
-    """Streaming token — plain text so agent output stays readable."""
-    print(text, end=end, flush=flush)
-
-
-def _tool_start(agent_name: str, tool_name: str, args: dict[str, str]) -> None:
-    """Render tool-call line with the same structure as Runtime/CliWriter.cs."""
-    print()
-    print("  🔧 ", end="")
-
-    parts = tool_name.split("-", 1)
-    if len(parts) == 2:
-        print(f"\x1b[96m{parts[0]}{_R}.\x1b[95m{parts[1]}{_R}", end="")
-    else:
-        print(f"\x1b[95m{tool_name}{_R}", end="")
-
-    print("\x1b[2m by \x1b[0m", end="")
-    print(f"\x1b[96m{agent_name}{_R}", end="")
-    if args:
-        rendered = ", ".join(f"{k}={v}" for k, v in args.items())
-        print(f"\x1b[2m ({rendered}){_R}", end="")
-    print()
-
-
-def _runner_result(text: str) -> None:
-    """🏁 bright-cyan label + body text."""
-    print(f"\n\x1b[96m🏁 Result{_R}\n{text}\n")
-
-
-def _warn(text: str) -> None:
-    """Yellow ⚠ warning."""
-    print(f"\x1b[33m⚠ {_R} {text}")
-
-
-def _turn_separator(label: str) -> None:
-    """Dim cyan ─── separator, matching TurnSeparator / IterationSeparator in CliWriter."""
-    pad = max(0, 60 - len(label) - 1)
-    bar = "─" * pad
-    print(f"\n\x1b[2;36m─── {label} {bar}{_R}")
-
-
-def _plan_review_header() -> None:
-    """Dim magenta block header for the plan-review HITL gate."""
-    print(f"\n\x1b[2;35m{'─' * 60}{_R}")
-    print(f"\x1b[1;35m  Magentic Plan Review — Human Input Required{_R}")
-    print(f"\x1b[2;35m{'─' * 60}{_R}")
-
-
-def _approval_header(title: str) -> None:
-    """Bold bright-blue approval gate header."""
-    print(f"\n\x1b[1;94m{'═' * 60}{_R}")
-    print(f"\x1b[1;94m  {title}{_R}")
-    print(f"\x1b[1;94m{'═' * 60}{_R}")
-
-
-def _user_prompt(prompt: str) -> str:
-    """Bold bright-blue input prompt; returns stripped answer."""
-    return input(f"\x1b[1;94m👤 {prompt}{_R} ").strip()
-
 
 @dataclass
 class AzureOpenAISettings:
@@ -507,54 +427,6 @@ async def _process_stream(
     return (responses if responses else None), final_rca
 
 
-def _arguments_to_text(arguments: object) -> str:
-    if isinstance(arguments, str):
-        return arguments
-    try:
-        return json.dumps(arguments, ensure_ascii=False)
-    except TypeError:
-        return str(arguments)
-
-
-def _parse_tool_arguments(arguments: str) -> dict[str, str]:
-    raw = arguments.strip()
-    if not raw:
-        return {}
-
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"arguments": raw}
-
-    if isinstance(parsed, dict):
-        return {k: _render_arg_value(v) for k, v in parsed.items()}
-
-    return {"arguments": _render_arg_value(parsed)}
-
-
-def _render_arg_value(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    try:
-        return json.dumps(value, ensure_ascii=False)
-    except TypeError:
-        return str(value)
-
-
-def _flush_pending_tool_call(
-    pending_tool_calls: dict[str, dict[str, str]], response_id: str
-) -> None:
-    pending = pending_tool_calls.get(response_id)
-    if not pending or not pending.get("name"):
-        return
-    _tool_start(
-        pending.get("agent_name", "unknown-agent"),
-        pending["name"],
-        _parse_tool_arguments(pending.get("arguments", "")),
-    )
-    pending_tool_calls.pop(response_id, None)
-
-
 def _require_exec_approval(final_rca: str) -> None:
     _approval_header("C-LEVEL RCA — PENDING HUMAN APPROVAL")
     print(final_rca)
@@ -626,6 +498,135 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     asyncio.run(_main_async(args))
+
+
+def _arguments_to_text(arguments: object) -> str:
+    if isinstance(arguments, str):
+        return arguments
+    try:
+        return json.dumps(arguments, ensure_ascii=False)
+    except TypeError:
+        return str(arguments)
+
+
+def _parse_tool_arguments(arguments: str) -> dict[str, str]:
+    raw = arguments.strip()
+    if not raw:
+        return {}
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"arguments": raw}
+
+    if isinstance(parsed, dict):
+        return {k: _render_arg_value(v) for k, v in parsed.items()}
+
+    return {"arguments": _render_arg_value(parsed)}
+
+
+def _render_arg_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except TypeError:
+        return str(value)
+
+
+def _flush_pending_tool_call(
+    pending_tool_calls: dict[str, dict[str, str]], response_id: str
+) -> None:
+    pending = pending_tool_calls.get(response_id)
+    if not pending or not pending.get("name"):
+        return
+    _tool_start(
+        pending.get("agent_name", "unknown-agent"),
+        pending["name"],
+        _parse_tool_arguments(pending.get("arguments", "")),
+    )
+    pending_tool_calls.pop(response_id, None)
+
+
+# ---------------------------------------------------------------------------
+# ANSI helpers — mirrors the style used in Runtime/CliWriter.cs
+# ---------------------------------------------------------------------------
+_R = "\x1b[0m"  # reset
+
+
+def _header(text: str) -> None:
+    """Bold cyan banner: ═══ text ═══"""
+    print(f"\n\x1b[1;36m═══ {text} ═══{_R}\n")
+
+
+def _info(text: str) -> None:
+    """Dim arrow + text for metadata lines."""
+    print(f"\x1b[2m→ {text}{_R}")
+
+
+def _agent_start(name: str) -> None:
+    """Dim arrow + bright-cyan agent name header before streaming tokens."""
+    print(f"\n\x1b[2m→ \x1b[96m{name}{_R}")
+
+
+def _agent_token(text: str, *, end: str = "", flush: bool = False) -> None:
+    """Streaming token — plain text so agent output stays readable."""
+    print(text, end=end, flush=flush)
+
+
+def _tool_start(agent_name: str, tool_name: str, args: dict[str, str]) -> None:
+    """Render tool-call line with the same structure as Runtime/CliWriter.cs."""
+    print()
+    print("  🔧 ", end="")
+
+    parts = tool_name.split("-", 1)
+    if len(parts) == 2:
+        print(f"\x1b[96m{parts[0]}{_R}.\x1b[95m{parts[1]}{_R}", end="")
+    else:
+        print(f"\x1b[95m{tool_name}{_R}", end="")
+
+    print("\x1b[2m by \x1b[0m", end="")
+    print(f"\x1b[96m{agent_name}{_R}", end="")
+    if args:
+        rendered = ", ".join(f"{k}={v}" for k, v in args.items())
+        print(f"\x1b[2m ({rendered}){_R}", end="")
+    print()
+
+
+def _runner_result(text: str) -> None:
+    """🏁 bright-cyan label + body text."""
+    print(f"\n\x1b[96m🏁 Result{_R}\n{text}\n")
+
+
+def _warn(text: str) -> None:
+    """Yellow ⚠ warning."""
+    print(f"\x1b[33m⚠ {_R} {text}")
+
+
+def _turn_separator(label: str) -> None:
+    """Dim cyan ─── separator, matching TurnSeparator / IterationSeparator in CliWriter."""
+    pad = max(0, 60 - len(label) - 1)
+    bar = "─" * pad
+    print(f"\n\x1b[2;36m─── {label} {bar}{_R}")
+
+
+def _plan_review_header() -> None:
+    """Dim magenta block header for the plan-review HITL gate."""
+    print(f"\n\x1b[2;35m{'─' * 60}{_R}")
+    print(f"\x1b[1;35m  Magentic Plan Review — Human Input Required{_R}")
+    print(f"\x1b[2;35m{'─' * 60}{_R}")
+
+
+def _approval_header(title: str) -> None:
+    """Bold bright-blue approval gate header."""
+    print(f"\n\x1b[1;94m{'═' * 60}{_R}")
+    print(f"\x1b[1;94m  {title}{_R}")
+    print(f"\x1b[1;94m{'═' * 60}{_R}")
+
+
+def _user_prompt(prompt: str) -> str:
+    """Bold bright-blue input prompt; returns stripped answer."""
+    return input(f"\x1b[1;94m👤 {prompt}{_R} ").strip()
 
 
 if __name__ == "__main__":
