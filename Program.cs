@@ -40,7 +40,6 @@ builder.Services.AddTransient<SequentialRunner>();
 builder.Services.AddTransient<ConcurrentRunner>();
 builder.Services.AddTransient<GroupChatRunner>();
 builder.Services.AddTransient<HandoffRunner>();
-builder.Services.AddTransient<MagenticRunner>();
 builder.Services.AddTransient<GraphRunner>();
 
 using var app = builder.Build();
@@ -60,7 +59,7 @@ if (string.IsNullOrWhiteSpace(mode))
 try
 {
     cli.Header($"Running {mode} orchestration");
-    
+
     switch (mode.ToLowerInvariant())
     {
         case "sequential":
@@ -74,9 +73,6 @@ try
             break;
         case "handoff":
             await app.Services.GetRequiredService<HandoffRunner>().RunAsync(prompt);
-            break;
-        case "magentic":
-            await app.Services.GetRequiredService<MagenticRunner>().RunAsync(prompt);
             break;
         case "graph":
             await app.Services.GetRequiredService<GraphRunner>().RunAsync(prompt);
@@ -102,5 +98,5 @@ catch (Exception ex)
 
 static void PrintUsage()
 {
-    Console.WriteLine("Usage: dotnet run -- <Sequential|Concurrent|GroupChat|Handoff|Magentic|Graph> [prompt...]");
+    Console.WriteLine("Usage: dotnet run -- <Sequential|Concurrent|GroupChat|Handoff|Graph> [prompt...]");
 }

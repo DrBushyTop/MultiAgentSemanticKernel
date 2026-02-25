@@ -7,7 +7,9 @@ namespace MultiAgentSemanticKernel.Runners;
 
 public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
 {
-    // Simulated user responses for demo purposes (like the old InteractiveCallback)
+    // Simulated user responses for demo purposes.
+    // These are dequeued one at a time by the InteractiveCallback whenever an agent
+    // hands back to the human for input — the correct HITL pattern.
     private readonly Queue<string> _simulatedResponses = new(
     [
         "Constraints: UI only for now, we want Stripe integration",
@@ -27,47 +29,42 @@ public class HandoffRunner(IChatClient chatClient, ICliWriter cli)
         cli.Header("Handoff: Dev Triage (Human-in-the-Loop Demo)");
         cli.Info($"Request: {prompt}");
 
-        // Track conversation history
+        // AgentWorkflowBuilder handoff workflows are stateless per-turn: they complete after
+        // each agent response and do not emit RequestInfoEvent. The human-in-the-loop is
+        // implemented as an outer loop — per the official Agent Framework handoff sample:
+        //   https://github.com/microsoft/agent-framework/blob/main/dotnet/samples/community/Workflow.Handoff
+        //
+        // Each iteration:
+        //   1. Add the current user message to the shared history
+        //   2. Recreate the workflow (stateless) and run it with the full history
+        //   3. Append the agent replies to history
+        //   4. Dequeue the next simulated user response and loop
+
         var messages = new List<ChatMessage>
         {
             new(ChatRole.User, prompt)
         };
 
-        // Run multiple turns to simulate human-in-the-loop interaction
-        // (Agent Framework handoff workflows complete per turn, so we loop externally)
-        while (_simulatedResponses.Count >= 0)
+        while (true)
         {
-            // Create fresh workflow for each turn (handoff workflows are stateless)
+            // Workflow is stateless — recreate each turn with the full conversation history
             var workflow = CreateHandoffWorkflow();
-            
-            // Execute workflow turn
-            var resultMessages = await WorkflowRunner.ExecuteAsync(workflow, messages, cli);
-            
-            // Add assistant responses to conversation history
-            foreach (var msg in resultMessages.Where(m => m.Role == ChatRole.Assistant))
+            var turnResults = await WorkflowRunner.ExecuteAsync(workflow, messages, cli);
+
+            // Accumulate agent responses into history so the next turn has full context
+            foreach (var msg in turnResults.Where(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.Text)))
             {
-                var textContent = msg.Text;
-                if (!string.IsNullOrWhiteSpace(textContent))
-                {
-                    messages.Add(new ChatMessage(ChatRole.Assistant, textContent) { AuthorName = msg.AuthorName });
-                }
+                messages.Add(new ChatMessage(ChatRole.Assistant, msg.Text!) { AuthorName = msg.AuthorName });
             }
 
-            // Get next user input (simulated)
-            if (_simulatedResponses.Count > 0)
-            {
-                var userResponse = _simulatedResponses.Dequeue();
-                cli.UserInput(userResponse);
-                messages.Add(new ChatMessage(ChatRole.User, userResponse));
-            }
-            else
-            {
-                // No more responses - end the conversation
+            // Dequeue the next simulated human response (HITL step)
+            if (!_simulatedResponses.TryDequeue(out var userResponse))
                 break;
-            }
+
+            cli.UserInput(userResponse);
+            messages.Add(new ChatMessage(ChatRole.User, userResponse));
         }
 
-        // Display final summary
         cli.Header("Handoff Complete");
         var summary = messages
             .Where(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.Text))
