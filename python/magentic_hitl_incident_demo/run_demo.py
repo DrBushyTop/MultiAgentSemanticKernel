@@ -50,6 +50,25 @@ def _agent_token(text: str, *, end: str = "", flush: bool = False) -> None:
     print(text, end=end, flush=flush)
 
 
+def _tool_start(agent_name: str, tool_name: str, args: dict[str, str]) -> None:
+    """Render tool-call line with the same structure as Runtime/CliWriter.cs."""
+    print()
+    print("  🔧 ", end="")
+
+    parts = tool_name.split("-", 1)
+    if len(parts) == 2:
+        print(f"\x1b[96m{parts[0]}{_R}.\x1b[95m{parts[1]}{_R}", end="")
+    else:
+        print(f"\x1b[95m{tool_name}{_R}", end="")
+
+    print("\x1b[2m by \x1b[0m", end="")
+    print(f"\x1b[96m{agent_name}{_R}", end="")
+    if args:
+        rendered = ", ".join(f"{k}={v}" for k, v in args.items())
+        print(f"\x1b[2m ({rendered}){_R}", end="")
+    print()
+
+
 def _runner_result(text: str) -> None:
     """🏁 bright-cyan label + body text."""
     print(f"\n\x1b[96m🏁 Result{_R}\n{text}\n")
@@ -322,13 +341,13 @@ def _build_workflow(chat_client: AzureOpenAIChatClient, tools: IncidentTools):
         description="Coordinates the incident team using Magentic planning.",
         instructions=(
             "You are the incident commander. Coordinate DeployInspector, Deployer, and ExecComms."
-            " The goal is: (1) investigate the incident via DeployInspector tools,"
-            " (2) stabilise service immediately via Deployer (rollback to 1.31),"
-            " (3) once stable, have Deployer poll check_package_availability for v1.33 and deploy"
+            " The goal is: (1) investigate the incident,"
+            " (2) stabilise service immediately via Deployer,"
+            " (3) once stable, have Deployer poll check_package_availability the next version and deploy"
             " it as soon as it becomes available,"
-            " (4) verify full recovery via DeployInspector after v1.33 is deployed,"
+            " (4) verify full recovery via DeployInspector after next version is deployed,"
             " then (5) have ExecComms produce the final C-level RCA for leadership approval."
-            " v1.33 will only become available after the rollback to v1.31 has been executed."
+            " The dev team is working on the next version as we speak, make sure it gets deployed"
             " Trust the tool return values — do not second-guess them."
         ),
         client=chat_client,
@@ -347,6 +366,7 @@ def _build_workflow(chat_client: AzureOpenAIChatClient, tools: IncidentTools):
 
 # Tracks the last streamed response ID to avoid reprinting the author header on each token.
 _last_response_id: str | None = None
+_last_author_name: str | None = None
 
 
 async def _process_stream(
@@ -359,8 +379,10 @@ async def _process_stream(
         final_rca is the ExecComms output once the workflow completes.
     """
     global _last_response_id
+    global _last_author_name
 
     plan_review_requests: dict[str, MagenticPlanReviewRequest] = {}
+    pending_tool_calls: dict[str, dict[str, str]] = {}
     final_rca = ""
 
     async for event in stream:
@@ -376,15 +398,62 @@ async def _process_stream(
         # ---- streaming agent token ----
         elif event.type == "output" and isinstance(event.data, AgentResponseUpdate):
             update = event.data
-            if update.response_id != _last_response_id:
+            response_changed = update.response_id != _last_response_id
+            if response_changed and _last_response_id is not None:
+                _flush_pending_tool_call(pending_tool_calls, _last_response_id)
+
+            if update.author_name != _last_author_name:
                 if _last_response_id is not None:
                     print()  # end the previous agent's line
                 _agent_start(update.author_name)
-                _last_response_id = update.response_id
+                _last_author_name = update.author_name
+
+            _last_response_id = update.response_id
+
+            contents = getattr(update, "contents", None)
+            if contents:
+                for content in contents:
+                    content_type = getattr(content, "type", None)
+                    if content_type == "function_call":
+                        name = getattr(content, "name", None)
+                        arguments = getattr(content, "arguments", None)
+
+                        pending = pending_tool_calls.get(update.response_id)
+                        if name:
+                            if pending and pending.get("name"):
+                                _tool_start(
+                                    update.author_name,
+                                    pending["name"],
+                                    _parse_tool_arguments(pending.get("arguments", "")),
+                                )
+                            pending_tool_calls[update.response_id] = {
+                                "agent_name": update.author_name,
+                                "name": str(name),
+                                "arguments": "",
+                            }
+                            if arguments not in (None, ""):
+                                pending_tool_calls[update.response_id]["arguments"] += (
+                                    _arguments_to_text(arguments)
+                                )
+                        elif pending and arguments not in (None, ""):
+                            pending["arguments"] += _arguments_to_text(arguments)
+
+                    elif content_type == "function_result":
+                        pending = pending_tool_calls.get(update.response_id)
+                        if pending and pending.get("name"):
+                            _tool_start(
+                                update.author_name,
+                                pending["name"],
+                                _parse_tool_arguments(pending.get("arguments", "")),
+                            )
+                            pending_tool_calls.pop(update.response_id, None)
+
             _agent_token(update.text, end="", flush=True)
 
         # ---- final workflow output (list[Message]) ----
         elif event.type == "output":
+            if _last_response_id is not None:
+                _flush_pending_tool_call(pending_tool_calls, _last_response_id)
             print()  # close any open streaming line
             _turn_separator("Workflow Complete")
             outputs = cast(list[Message], event.data)
@@ -404,7 +473,19 @@ async def _process_stream(
                 ledger_json = json.dumps(event.data.content.to_dict(), indent=2)
                 print(f"\x1b[2m{ledger_json}{_R}")
 
+    for response_id, pending in list(pending_tool_calls.items()):
+        if pending.get("name"):
+            _tool_start(
+                pending.get("agent_name", "unknown-agent"),
+                pending["name"],
+                _parse_tool_arguments(pending.get("arguments", "")),
+            )
+        pending_tool_calls.pop(response_id, None)
+
     # After stream ends: collect human responses for any plan review requests
+    _last_response_id = None
+    _last_author_name = None
+
     responses: dict[str, MagenticPlanReviewResponse] = {}
     for request_id, request in plan_review_requests.items():
         _plan_review_header()
@@ -424,6 +505,54 @@ async def _process_stream(
             responses[request_id] = request.revise(reply)
 
     return (responses if responses else None), final_rca
+
+
+def _arguments_to_text(arguments: object) -> str:
+    if isinstance(arguments, str):
+        return arguments
+    try:
+        return json.dumps(arguments, ensure_ascii=False)
+    except TypeError:
+        return str(arguments)
+
+
+def _parse_tool_arguments(arguments: str) -> dict[str, str]:
+    raw = arguments.strip()
+    if not raw:
+        return {}
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"arguments": raw}
+
+    if isinstance(parsed, dict):
+        return {k: _render_arg_value(v) for k, v in parsed.items()}
+
+    return {"arguments": _render_arg_value(parsed)}
+
+
+def _render_arg_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except TypeError:
+        return str(value)
+
+
+def _flush_pending_tool_call(
+    pending_tool_calls: dict[str, dict[str, str]], response_id: str
+) -> None:
+    pending = pending_tool_calls.get(response_id)
+    if not pending or not pending.get("name"):
+        return
+    _tool_start(
+        pending.get("agent_name", "unknown-agent"),
+        pending["name"],
+        _parse_tool_arguments(pending.get("arguments", "")),
+    )
+    pending_tool_calls.pop(response_id, None)
 
 
 def _require_exec_approval(final_rca: str) -> None:
